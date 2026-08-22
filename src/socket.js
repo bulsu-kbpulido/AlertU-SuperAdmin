@@ -1,15 +1,26 @@
 import { io } from 'socket.io-client';
 
-// 1. Resolve backend socket server URL from Vite env or fallback to local development server
-const SOCKET_URL = import.meta.env?.VITE_SOCKET_URL || import.meta.env?.VITE_BACKEND_URL || 'http://localhost:3000';
+const RAILWAY_BACKEND_URL = 'https://alertu-server-production.up.railway.app';
+
+const configuredSocketUrl = (
+  import.meta.env?.VITE_SOCKET_URL ||
+  import.meta.env?.VITE_BACKEND_URL ||
+  import.meta.env?.VITE_API_URL ||
+  RAILWAY_BACKEND_URL
+).trim();
+
+// Socket.IO must use the backend origin, without /api.
+const SOCKET_URL = configuredSocketUrl.replace(/\/+$/, '').replace(/\/api$/i, '');
 
 // 2. Instantiate singleton Socket.IO instance tailored for SuperAdmin operations
 export const socket = io(SOCKET_URL, {
+  path: '/socket.io',
   autoConnect: true,
   reconnection: true,
   reconnectionAttempts: 25,
   reconnectionDelay: 1000,
-  transports: ['websocket', 'polling'], // WebSockets with polling fallback
+  transports: ['polling', 'websocket'], // Start through polling, upgrade to WebSockets
+  upgrade: true,
   withCredentials: true,
 });
 
@@ -151,7 +162,7 @@ export const disconnectSocketUser = () => {
 // ==========================================
 
 socket.on('connect', () => {
-  console.log(`⚡ Connected to AlertU Socket Server (ID: ${socket.id})`);
+  console.log(`⚡ Connected to AlertU Socket Server on Railway (ID: ${socket.id})`);
 
   // Ensure default administrative channels are joined
   joinSocketRoom('admins');

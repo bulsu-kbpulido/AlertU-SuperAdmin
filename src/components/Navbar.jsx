@@ -1,39 +1,51 @@
 import { useState, useEffect } from 'react';
-import { Menu, X } from 'lucide-react';
+import { Menu, X, Clock, User, ShieldCheck } from 'lucide-react';
 import { auth, db } from '../firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
-import Logo1 from '../assets/logo1.png';
 import { resolveSuperAdminDocId } from '../utils/superAdminDoc';
 
+const PHILIPPINE_TIMEZONE = 'Asia/Manila';
+
 const getInitials = (name) => {
-  if (!name) return '?';
-  return name
-    .trim()
-    .split(/\s+/)
-    .map((n) => n[0])
-    .join('')
-    .slice(0, 2)
-    .toUpperCase();
+  if (!name) return 'SA';
+  const parts = name.trim().split(/\s+/);
+  if (parts.length >= 2) {
+    return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+  }
+  return name.slice(0, 2).toUpperCase();
 };
 
-export default function Navbar({ darkMode, activePage, setActivePage, isOpen, setIsOpen }) {
-  const [displayName, setDisplayName] = useState('');
+export default function Navbar({ activePage, setActivePage, isOpen, setIsOpen }) {
+  const [displayName, setDisplayName] = useState('Super Administrator');
   const [avatarUrl, setAvatarUrl] = useState('');
+  const [now, setNow] = useState(new Date());
 
-  const pageTitles = {
-    dashboard: 'Dashboard',
-    admins: 'Admin Modification',
-    logs: 'Audit Logs',
-    settings: 'Settings',
-    profile: 'Profile Management',
-  };
+  // 1. Live Philippine Clock Ticker
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNow(new Date());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
-  // Live subscription to the logged-in superadmin's own document, so the
-  // initials/avatar update immediately if changed in Profile Management —
-  // no page refresh needed. Resolves the doc ID with the same logic
-  // ProfileManagement.jsx uses (email lookup, uid fallback) instead of
-  // assuming the doc ID equals the Auth uid — that mismatch was why this
-  // badge previously never reflected saved changes.
+  // Format date and time for Philippine Standard Time
+  const formattedDate = new Intl.DateTimeFormat('en-US', {
+    timeZone: PHILIPPINE_TIMEZONE,
+    weekday: 'long',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(now);
+
+  const formattedTime = new Intl.DateTimeFormat('en-US', {
+    timeZone: PHILIPPINE_TIMEZONE,
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true,
+  }).format(now);
+
+  // 2. Real-time subscription to SuperAdmin profile document
   useEffect(() => {
     const currentUser = auth.currentUser;
     if (!currentUser) return undefined;
@@ -49,12 +61,12 @@ export default function Navbar({ darkMode, activePage, setActivePage, isOpen, se
         doc(db, 'superadmin', docId),
         (snap) => {
           const data = snap.exists() ? snap.data() : null;
-          setDisplayName(data?.name || currentUser.displayName || currentUser.email || '');
+          setDisplayName(data?.name || currentUser.displayName || 'Super Administrator');
           setAvatarUrl(data?.avatar || '');
         },
         (error) => {
-          console.error('Failed to load superadmin profile for navbar:', error);
-          setDisplayName(currentUser.displayName || currentUser.email || '');
+          console.warn('Navbar snapshot note:', error.message);
+          setDisplayName(currentUser.displayName || 'Super Administrator');
         }
       );
     };
@@ -67,60 +79,80 @@ export default function Navbar({ darkMode, activePage, setActivePage, isOpen, se
   }, []);
 
   return (
-    <header className={`
-      h-16 w-full border-b flex items-center justify-between px-4 md:px-6 sticky top-0 z-20 backdrop-blur-md transition-all duration-200
-      ${darkMode ? 'bg-slate-900/80 border-slate-800 text-slate-100' : 'bg-white/80 border-slate-200 text-slate-800'}
-    `}>
-      
-      {/* LEFT ASPECT: Brand on Mobile / Page Title on Desktop */}
-      <div className="flex items-center gap-4">
-        {/* Mobile menu trigger hamburger action button */}
-        <button 
-          onClick={() => setIsOpen(!isOpen)}
-          className={`md:hidden p-2 rounded-lg transition-colors cursor-pointer border ${
-            darkMode ? 'border-slate-800 hover:bg-slate-800 text-slate-400 hover:text-slate-100' : 'border-slate-200 hover:bg-slate-50 text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          {isOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-        </button>
+    <header className="sticky top-0 z-30 w-full border-b border-slate-200/80 bg-white/90 px-4 sm:px-8 backdrop-blur-md dark:border-slate-800 dark:bg-slate-900/90 transition-colors duration-200 font-sans">
+      <div className="flex h-20 items-center justify-between gap-4 sm:gap-6">
+        
+        {/* LEFT: MOBILE MENU TRIGGER, LIVE AVATAR, NAME & REAL-TIME PHILIPPINE CLOCK */}
+        <div className="flex items-center gap-3 sm:gap-5 min-w-0">
+          
+          {/* Mobile hamburger action */}
+          <button
+            onClick={() => setIsOpen(!isOpen)}
+            className="md:hidden p-2 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
+            aria-label="Toggle Navigation"
+          >
+            {isOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+          </button>
 
-        {/* Small branding anchor explicitly shown on mobile screen blocks */}
-        <div className="flex md:hidden items-center gap-2">
-          <img src={Logo1} alt="AlertU" className="w-6 h-6 object-contain" />
-          <span className="font-extrabold tracking-tight text-md bg-gradient-to-r from-indigo-600 to-blue-500 dark:from-indigo-400 dark:to-blue-400 bg-clip-text text-transparent">
-            AlertU
-          </span>
+          {/* SuperAdmin Profile Info Header */}
+          <div 
+            onClick={() => setActivePage('profile')}
+            className="flex items-center gap-3 cursor-pointer group shrink-0"
+            title="Go to Profile Management"
+          >
+            <div className="relative">
+              <div className="flex h-11 w-11 shrink-0 overflow-hidden rounded-full ring-2 ring-blue-500/20 transition-transform group-hover:scale-105 bg-slate-100 dark:bg-slate-800 items-center justify-center font-bold text-sm text-blue-600 dark:text-blue-400">
+                {avatarUrl ? (
+                  <img src={avatarUrl} alt="Avatar" className="aspect-square h-full w-full object-cover" />
+                ) : (
+                  <span>{getInitials(displayName)}</span>
+                )}
+              </div>
+              <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-slate-900" />
+            </div>
+
+            <div className="flex flex-col text-left">
+              <span className="text-sm sm:text-base font-medium leading-snug text-slate-900 dark:text-slate-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors truncate max-w-[140px] sm:max-w-[200px]">
+                {displayName}
+              </span>
+              <span className="text-[11px] font-normal text-slate-500 dark:text-slate-400">
+                Super Administrator
+              </span>
+            </div>
+          </div>
+
+          <div className="h-7 w-px bg-slate-200 dark:bg-slate-800 shrink-0 hidden sm:block" />
+
+          {/* DATE & TICKING CLOCK CHIP */}
+          <div className="hidden sm:flex flex-col lg:flex-row lg:items-center gap-1 lg:gap-2 text-xs sm:text-sm font-medium text-slate-600 dark:text-slate-300 truncate">
+            <span className="truncate">{formattedDate}</span>
+            <span className="hidden lg:inline text-slate-300 dark:text-slate-700">•</span>
+            <div className="inline-flex items-center gap-1.5 text-blue-600 dark:text-blue-400 bg-blue-50/80 dark:bg-blue-950/50 px-2.5 py-1 rounded-md border border-blue-200/60 dark:border-blue-900/40">
+              <Clock className="h-3.5 w-3.5 shrink-0 animate-pulse" />
+              <span className="font-mono font-semibold tracking-tight">{formattedTime}</span>
+              <span className="text-[10px] font-bold tracking-wider text-blue-500/80 dark:text-blue-400/80 uppercase ml-0.5">
+                PST
+              </span>
+            </div>
+          </div>
+
         </div>
 
-        <h2 className="hidden md:block text-xs font-semibold uppercase tracking-widest font-mono text-slate-500 dark:text-slate-400">
-          {pageTitles[activePage] || 'AlertU Console'}
-        </h2>
-      </div>
-
-      {/* RIGHT ASPECT: Utilities layout tools */}
-      <div className="flex items-center gap-3">
-        
-
-        <div className={`w-px h-5 hidden sm:block ${darkMode ? 'bg-slate-800' : 'bg-slate-200'}`} />
-
-        {/* User avatar — clicking navigates straight to Profile Management */}
-        <button
-          onClick={() => setActivePage('profile')}
-          title="Profile Management"
-          className={`flex items-center gap-1.5 p-1.5 rounded-xl transition-all cursor-pointer text-left border ${
-            activePage === 'profile'
-              ? (darkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-200')
-              : 'hover:bg-slate-100 dark:hover:bg-slate-800 border-transparent hover:border-slate-200 dark:hover:border-slate-700'
-          }`}
-        >
-          <div className="w-7 h-7 rounded-lg overflow-hidden bg-gradient-to-br from-indigo-600 to-blue-600 text-white flex items-center justify-center font-bold text-xs shadow-md shadow-indigo-600/10">
-            {avatarUrl ? (
-              <img src={avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
-            ) : (
-              getInitials(displayName)
-            )}
-          </div>
-        </button>
+        {/* RIGHT: PROFILE MANAGEMENT PILL SHORTCUT */}
+        <div className="flex items-center gap-3 shrink-0">
+          <button
+            onClick={() => setActivePage('profile')}
+            className={`group relative inline-flex items-center justify-center gap-2 rounded-xl border px-3.5 py-2 text-xs sm:text-sm font-medium transition-all active:scale-[0.98] cursor-pointer outline-none ${
+              activePage === 'profile'
+                ? 'bg-blue-600 border-blue-600 text-white shadow-xs'
+                : 'border-slate-200 bg-white text-slate-800 hover:bg-slate-50 hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800'
+            }`}
+          >
+            <User className="h-4 w-4 shrink-0 transition-transform group-hover:scale-105" />
+            <span className="hidden sm:inline">Profile Settings</span>
+            <span className="sm:hidden">Profile</span>
+          </button>
+        </div>
 
       </div>
     </header>

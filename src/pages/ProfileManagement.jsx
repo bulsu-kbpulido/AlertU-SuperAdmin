@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
-  User, Eye, EyeOff, CheckCircle2, Loader2,
+  User, Eye, EyeOff, CheckCircle2, Loader2, UploadCloud,
 } from 'lucide-react';
 import toast, { Toaster } from 'react-hot-toast';
 import { isValidPhoneNumber } from 'react-phone-number-input';
@@ -8,10 +8,13 @@ import PhoneInputField from '../components/PhoneInputField';
 import { db, auth } from '../firebase';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { resolveSuperAdminDocId } from '../utils/superAdminDoc';
+import { useAuditLog } from '../useAuditLog';
+import { fetchFromBackend } from '../api';
 import { PasswordStrengthInput, DEFAULT_RULES } from '@/components/spectrumui/password-strength';
 import {
   updatePassword,
   updateEmail,
+  updateProfile,
   verifyBeforeUpdateEmail,
   reauthenticateWithCredential,
   EmailAuthProvider,
@@ -43,15 +46,20 @@ function Spinner({ className = '' }) {
 export default function ProfileManagement({ darkMode }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [selectedAvatarFile, setSelectedAvatarFile] = useState(null);
+  const [avatarPreview, setAvatarPreview] = useState('');
+
   const [docId, setDocId] = useState(null);
   const [profile, setProfile] = useState({
     name: '', username: '', email: '', avatar: '', updatedAt: null, passwordUpdatedAt: null,
   });
   const [phone, setPhone] = useState('');
 
-  // SEPARATE password state for email change vs password change.
-  // Previously a single `currentPassword` was shared, so the confirmation
-  // field for email changes also appeared / synced with the Security form.
+  // Audit logging hook
+  const { logSuperAdminProfileUpdate, logSuperAdminPasswordChange } = useAuditLog();
+
+  // Separate password state for email change vs password change
   const [emailConfirmPassword, setEmailConfirmPassword] = useState('');
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -87,7 +95,7 @@ export default function ProfileManagement({ darkMode }) {
             name: data.name || auth.currentUser.displayName || '',
             username: data.username || '',
             email: data.email || auth.currentUser.email || '',
-            avatar: data.avatar || '',
+            avatar: data.avatar || auth.currentUser.photoURL || '',
             updatedAt: data.updatedAt || null,
             passwordUpdatedAt: data.passwordUpdatedAt || null,
           }));
@@ -97,6 +105,7 @@ export default function ProfileManagement({ darkMode }) {
             ...prev,
             name: auth.currentUser.displayName || '',
             email: auth.currentUser.email || '',
+            avatar: auth.currentUser.photoURL || '',
           }));
           setPhone(auth.currentUser.phoneNumber || '');
         }
@@ -114,22 +123,51 @@ export default function ProfileManagement({ darkMode }) {
     setProfile((prev) => ({ ...prev, [field]: value }));
   };
 
+  const handleFileSelection = (file) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please select a valid image file.');
+      return;
+    }
+    setSelectedAvatarFile(file);
+    setAvatarPreview(URL.createObjectURL(file));
+  };
+
   const handleAvatarUpload = (e) => {
     const file = e.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => handleFieldChange('avatar', reader.result);
-      reader.readAsDataURL(file);
-    }
+    if (file) handleFileSelection(file);
   };
 
   const handleAvatarDrop = (e) => {
     e.preventDefault();
     const file = e.dataTransfer.files[0];
-    if (file && file.type.startsWith('image/')) {
-      const reader = new FileReader();
-      reader.onloadend = () => handleFieldChange('avatar', reader.result);
-      reader.readAsDataURL(file);
+    if (file) handleFileSelection(file);
+  };
+
+  // Upload avatar file to Backblaze B2 via server proxy
+  const uploadAvatarToB2 = async (file) => {
+    const toastId = toast.loading("Uploading profile image to storage...");
+    try {
+      const targetUid = docId || auth.currentUser?.uid || 'superadmin';
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('uid', targetUid);
+
+      const data = await fetchFromBackend('admin/upload-avatar', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!data.success && !data.fileUrl) {
+        throw new Error(data.error || data.message || 'Avatar upload failed');
+      }
+
+      toast.success("Profile image uploaded to Backblaze B2!", { id: toastId });
+      return data.fileUrl;
+    } catch (error) {
+      console.error("Backblaze B2 Avatar Upload Error:", error);
+      toast.error(error.message || "Failed to upload image to storage.", { id: toastId });
+      throw error;
     }
   };
 
@@ -143,7 +181,7 @@ export default function ProfileManagement({ darkMode }) {
   };
 
   const emailValid = EMAIL_REGEX.test(profile.email.trim());
-  const phoneValid = !!phone && isValidPhoneNumber(phone);
+  const phoneValid = !phone || isValidPhoneNumber(phone);
   const nameValid = profile.name.trim().length > 0;
   const usernameValid = profile.username.trim().length > 0;
   const emailChanged = !!auth.currentUser?.email && profile.email.trim().toLowerCase() !== auth.currentUser.email.toLowerCase();
@@ -180,8 +218,20 @@ export default function ProfileManagement({ darkMode }) {
         return;
       }
 
-      // Email change requires a recent re-authentication with a SEPARATE
-      // password field (emailConfirmPassword), not the Security form field.
+      // Step 1: Upload selected image to Backblaze B2 if a new file was chosen
+      let finalAvatarUrl = profile.avatar;
+      if (selectedAvatarFile) {
+        setUploadingAvatar(true);
+        try {
+          finalAvatarUrl = await uploadAvatarToB2(selectedAvatarFile);
+        } catch (uploadErr) {
+          console.warn('Avatar upload to B2 failed, continuing with previous URL:', uploadErr);
+        } finally {
+          setUploadingAvatar(false);
+        }
+      }
+
+      // Step 2: Email change re-authentication if email was modified
       if (emailChanged) {
         if (!emailConfirmPassword) {
           toast.error('Enter your current password to confirm the email change.');
@@ -191,12 +241,6 @@ export default function ProfileManagement({ darkMode }) {
 
         await reauthenticate(emailConfirmPassword);
 
-        // Prefer verifyBeforeUpdateEmail when available: Firebase sends a
-        // verification link to the *new* address. Until the user clicks it,
-        // auth.currentUser.email stays the old one. We still write the
-        // intended email to Firestore so the profile reflects the change.
-        // Fall back to updateEmail if verifyBeforeUpdateEmail is unavailable
-        // or the project still allows immediate updates.
         let usedVerificationFlow = false;
         try {
           if (typeof verifyBeforeUpdateEmail === 'function') {
@@ -206,8 +250,6 @@ export default function ProfileManagement({ darkMode }) {
             await updateEmail(user, profile.email.trim());
           }
         } catch (emailErr) {
-          // Some projects still support updateEmail only; try that if
-          // verifyBeforeUpdateEmail failed with an unexpected code.
           if (
             emailErr.code === 'auth/operation-not-allowed' ||
             emailErr.code === 'auth/argument-error'
@@ -225,6 +267,7 @@ export default function ProfileManagement({ darkMode }) {
         }
       }
 
+      // Step 3: Persist to Firestore `superadmin` document
       await setDoc(
         doc(db, 'superadmin', docId),
         {
@@ -232,18 +275,40 @@ export default function ProfileManagement({ darkMode }) {
           username: profile.username || '',
           email: profile.email.trim() || '',
           phone: phone || '',
-          avatar: profile.avatar || '',
+          avatar: finalAvatarUrl || '',
           updatedAt: serverTimestamp(),
         },
         { merge: true }
       );
 
+      // Step 4: Update Firebase Auth photoURL and displayName
+      try {
+        if (auth.currentUser) {
+          await updateProfile(auth.currentUser, {
+            displayName: profile.name || auth.currentUser.displayName,
+            photoURL: finalAvatarUrl || auth.currentUser.photoURL,
+          });
+        }
+      } catch (authProfileErr) {
+        console.warn('Auth photoURL sync warning:', authProfileErr.message);
+      }
+
       setEmailConfirmPassword('');
+      setSelectedAvatarFile(null);
+      setAvatarPreview('');
+      setProfile((prev) => ({ ...prev, avatar: finalAvatarUrl }));
+
+      await logSuperAdminProfileUpdate({
+        name: profile.name,
+        username: profile.username,
+        email: profile.email.trim(),
+        phone,
+        avatar: finalAvatarUrl,
+      });
+
       if (!emailChanged) {
         toast.success('Profile updated successfully!');
       } else {
-        // If verifyBeforeUpdateEmail was used, a toast was already shown.
-        // If updateEmail applied immediately, confirm success here.
         const emailNow = auth.currentUser?.email?.toLowerCase() || '';
         if (emailNow === profile.email.trim().toLowerCase()) {
           toast.success('Profile and email updated successfully!');
@@ -261,8 +326,6 @@ export default function ProfileManagement({ darkMode }) {
         toast.error('Please enter a valid email address.');
       } else if (error.code === 'auth/too-many-requests') {
         toast.error('Too many attempts. Please wait a moment and try again.');
-      } else if (error.code === 'auth/operation-not-allowed') {
-        toast.error('Email changes are disabled in Firebase Auth settings. Enable Email/Password provider.');
       } else {
         toast.error(error.message || 'Failed to update profile.');
       }
@@ -291,6 +354,7 @@ export default function ProfileManagement({ darkMode }) {
         );
       }
       setProfile((prev) => ({ ...prev, passwordUpdatedAt: { toDate: () => new Date() } }));
+      await logSuperAdminPasswordChange(auth.currentUser?.email || profile.email);
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
@@ -342,23 +406,46 @@ export default function ProfileManagement({ darkMode }) {
         <h1 className="text-2xl font-black tracking-tight">Edit Profile</h1>
       </div>
 
-      {/* Personal Information */}
-      <form onSubmit={handleSaveProfile} className={`p-6 rounded-xl border shadow-xs space-y-6 ${cardBg}`}>
+      {/* Personal Information Form */}
+      <form onSubmit={handleSaveProfile} className={`p-6 rounded-2xl border shadow-xs space-y-6 ${cardBg}`}>
 
-        <div
-          className="w-20 h-20 rounded-full flex items-center justify-center border-2 border-dashed cursor-pointer overflow-hidden mx-auto"
-          onClick={() => document.getElementById('profileAvatarUpload').click()}
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={handleAvatarDrop}
-        >
-          {profile.avatar ? (
-            <img src={profile.avatar} alt="Avatar" className="w-full h-full object-cover" />
-          ) : (
-            <User className="w-8 h-8 text-slate-400" />
-          )}
+        {/* Backblaze B2 Profile Photo Upload */}
+        <div className="text-center space-y-2">
+          <div
+            className="w-24 h-24 rounded-full flex items-center justify-center border-2 border-dashed border-slate-300 dark:border-slate-700 cursor-pointer overflow-hidden mx-auto hover:border-blue-500 transition-colors relative group"
+            onClick={() => document.getElementById('profileAvatarUpload').click()}
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={handleAvatarDrop}
+            title="Click or drag image to change photo"
+          >
+            {avatarPreview || profile.avatar ? (
+              <img
+                src={avatarPreview || profile.avatar}
+                alt="Avatar"
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <User className="w-10 h-10 text-slate-400" />
+            )}
+            {uploadingAvatar && (
+              <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                <Spinner className="text-white w-6 h-6" />
+              </div>
+            )}
+          </div>
+          <input
+            type="file"
+            id="profileAvatarUpload"
+            accept="image/*"
+            className="hidden"
+            onChange={handleAvatarUpload}
+          />
+          <p className={`text-xs ${textSecondary}`}>
+            {selectedAvatarFile
+              ? `Selected: ${selectedAvatarFile.name} (will save to Backblaze B2)`
+              : 'Drag & drop or click to upload profile image'}
+          </p>
         </div>
-        <input type="file" id="profileAvatarUpload" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
-        <p className="text-xs text-center text-slate-500">Drag & drop or click to upload profile image</p>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div>
@@ -366,7 +453,7 @@ export default function ProfileManagement({ darkMode }) {
             <input
               type="text" value={profile.name} required
               onChange={(e) => handleFieldChange('name', e.target.value)}
-              className={`w-full mt-1 px-4 py-2 rounded-lg border focus:ring-4 outline-none ${inputStyling} ${!nameValid ? 'border-red-400' : ''}`}
+              className={`w-full mt-1 px-4 py-2 rounded-xl border focus:ring-4 outline-none transition-all ${inputStyling} ${!nameValid ? 'border-red-400' : ''}`}
             />
           </div>
           <div>
@@ -374,7 +461,7 @@ export default function ProfileManagement({ darkMode }) {
             <input
               type="text" value={profile.username} required
               onChange={(e) => handleFieldChange('username', e.target.value)}
-              className={`w-full mt-1 px-4 py-2 rounded-lg border focus:ring-4 outline-none ${inputStyling} ${!usernameValid ? 'border-red-400' : ''}`}
+              className={`w-full mt-1 px-4 py-2 rounded-xl border focus:ring-4 outline-none transition-all ${inputStyling} ${!usernameValid ? 'border-red-400' : ''}`}
             />
           </div>
           <div>
@@ -382,12 +469,12 @@ export default function ProfileManagement({ darkMode }) {
             <input
               type="email" value={profile.email} required
               onChange={(e) => handleFieldChange('email', e.target.value)}
-              className={`w-full mt-1 px-4 py-2 rounded-lg border focus:ring-4 outline-none ${inputStyling} ${profile.email && !emailValid ? 'border-red-400' : ''}`}
+              className={`w-full mt-1 px-4 py-2 rounded-xl border focus:ring-4 outline-none transition-all ${inputStyling} ${profile.email && !emailValid ? 'border-red-400' : ''}`}
             />
             {profile.email && !emailValid && <p className={errorText}>Enter a valid email address.</p>}
           </div>
           <div>
-            <label className={`text-xs font-medium ${textSecondary}`}>Phone Number <span className="text-red-500">*</span></label>
+            <label className={`text-xs font-medium ${textSecondary}`}>Phone Number</label>
             <div className="mt-1">
               <PhoneInputField
                 value={phone}
@@ -400,7 +487,7 @@ export default function ProfileManagement({ darkMode }) {
           </div>
         </div>
 
-        {/* Email-change confirmation — uses its OWN state, never shared with Security */}
+        {/* Email-change confirmation password */}
         {emailChanged && (
           <div>
             <label className={`text-xs font-medium ${textSecondary}`}>
@@ -414,19 +501,19 @@ export default function ProfileManagement({ darkMode }) {
                 onChange={(e) => setEmailConfirmPassword(e.target.value)}
                 placeholder="Enter current password"
                 autoComplete="current-password"
-                className={`w-full px-4 py-2 pr-10 rounded-lg border focus:ring-4 outline-none ${inputStyling}`}
+                className={`w-full px-4 py-2 pr-10 rounded-xl border focus:ring-4 outline-none transition-all ${inputStyling}`}
               />
               <button
                 type="button"
                 onClick={() => setShowEmailConfirm(!showEmailConfirm)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 cursor-pointer"
                 tabIndex={-1}
               >
                 {showEmailConfirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
             <p className={`text-xs mt-1 ${textSecondary}`}>
-              Firebase requires a recent sign-in before changing your email. This password is only used for the email update and is separate from the Security section below.
+              Firebase requires a recent sign-in before changing your email.
             </p>
           </div>
         )}
@@ -440,7 +527,7 @@ export default function ProfileManagement({ darkMode }) {
             <button
               type="submit"
               disabled={!isProfileValid || (emailChanged && !emailConfirmPassword)}
-              className="inline-flex items-center gap-2 px-5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow disabled:opacity-50 disabled:cursor-not-allowed"
+              className="inline-flex items-center gap-2 px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors"
             >
               Save Changes
             </button>
@@ -450,8 +537,8 @@ export default function ProfileManagement({ darkMode }) {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
 
-        {/* Change Password Form — completely independent password state */}
-        <form onSubmit={handleChangePassword} className={`p-6 rounded-xl border shadow-xs space-y-4 ${cardBg}`}>
+        {/* Change Password Form */}
+        <form onSubmit={handleChangePassword} className={`p-6 rounded-2xl border shadow-xs space-y-4 ${cardBg}`}>
           <h2 className="text-lg font-bold">Security</h2>
           <p className={`text-xs ${textSecondary}`}>
             Last password change: <span className="font-semibold">{formatDate(profile.passwordUpdatedAt)}</span>
@@ -465,9 +552,9 @@ export default function ProfileManagement({ darkMode }) {
                 value={currentPassword}
                 onChange={(e) => setCurrentPassword(e.target.value)}
                 autoComplete="current-password"
-                className={`w-full px-4 py-2 pr-10 rounded-lg border focus:ring-4 outline-none ${inputStyling}`}
+                className={`w-full px-4 py-2 pr-10 rounded-xl border focus:ring-4 outline-none transition-all ${inputStyling}`}
               />
-              <button type="button" onClick={() => setShowCurrent(!showCurrent)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
+              <button type="button" onClick={() => setShowCurrent(!showCurrent)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 cursor-pointer">
                 {showCurrent ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
@@ -494,9 +581,9 @@ export default function ProfileManagement({ darkMode }) {
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 autoComplete="new-password"
-                className={`w-full px-4 py-2 pr-10 rounded-lg border focus:ring-4 outline-none ${inputStyling} ${confirmPassword && !passwordsMatch ? 'border-red-400' : ''}`}
+                className={`w-full px-4 py-2 pr-10 rounded-xl border focus:ring-4 outline-none transition-all ${inputStyling} ${confirmPassword && !passwordsMatch ? 'border-red-400' : ''}`}
               />
-              <button type="button" onClick={() => setShowConfirm(!showConfirm)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
+              <button type="button" onClick={() => setShowConfirm(!showConfirm)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 cursor-pointer">
                 {showConfirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
@@ -512,7 +599,7 @@ export default function ProfileManagement({ darkMode }) {
               <button
                 type="submit"
                 disabled={!isPasswordFormValid}
-                className="inline-flex items-center gap-2 px-5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow disabled:opacity-50 disabled:cursor-not-allowed"
+                className="inline-flex items-center gap-2 px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors"
               >
                 Change Password
               </button>
@@ -520,8 +607,8 @@ export default function ProfileManagement({ darkMode }) {
           </div>
         </form>
 
-        {/* Account Information */}
-        <div className={`p-6 rounded-xl border shadow-xs ${cardBg}`}>
+        {/* Account Information Card */}
+        <div className={`p-6 rounded-2xl border shadow-xs ${cardBg}`}>
           <h2 className="text-lg font-bold mb-4">Account Information</h2>
           <dl className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
             <div>

@@ -19,14 +19,13 @@ import { PhoneInput } from '@/components/reui/phone-input';
 import { db, auth } from '../firebase'; 
 import { 
   collection, 
-  addDoc, 
   onSnapshot, 
   doc, 
   updateDoc, 
   serverTimestamp
 } from 'firebase/firestore';
-
-const API_BASE_URL = 'https://alertu-server.onrender.com';
+import { fetchFromBackend } from '../api';
+import { useAuditLog } from '../useAuditLog';
 
 // Helper: Format raw PH numbers (e.g., "09171234567" -> "+639171234567") for react-phone-number-input
 const formatToE164Phone = (phoneNumber) => {
@@ -182,23 +181,12 @@ export default function AdminManagement({ darkMode }) {
     return () => unsubscribe();
   }, []);
 
+  // Audit logging hook
+  const { logRegisterAdmin, logEditAdmin, logArchiveAdmin, logRestoreAdmin } = useAuditLog();
+
   const getInitials = (name) => {
     if (!name) return '?';
     return name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
-  };
-
-  const logAuditAction = async (action, type, targetUser) => {
-    try {
-      await addDoc(collection(db, 'audit_logs'), {
-        action,
-        type,
-        performedBy: auth.currentUser?.email || 'Unknown',
-        targetUser,
-        timestamp: serverTimestamp(),
-      });
-    } catch (error) {
-      console.error('Failed to log audit action:', error);
-    }
   };
 
   const openCreateModal = () => {
@@ -287,30 +275,19 @@ export default function AdminManagement({ darkMode }) {
     const toastId = toast.loading("Uploading avatar to storage...");
 
     try {
-      const user = auth.currentUser;
-      if (!user) {
-        throw new Error("No active user session found. Please log in again.");
-      }
-
-      const idToken = await user.getIdToken(true);
       const targetUid = editingAdmin?.uid || editingAdmin?.id || 'new_admin';
 
       const formDataUpload = new FormData();
       formDataUpload.append('file', file);
       formDataUpload.append('uid', targetUid);
 
-      const uploadResponse = await fetch(`${API_BASE_URL}/api/admin/upload-avatar`, {
+      const data = await fetchFromBackend('admin/upload-avatar', {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${idToken}`
-        },
-        body: formDataUpload
+        body: formDataUpload,
       });
 
-      const data = await uploadResponse.json();
-
-      if (!uploadResponse.ok || !data.success) {
-        throw new Error(data.error || data.message || `Upload failed with status ${uploadResponse.status}`);
+      if (!data.success && !data.fileUrl) {
+        throw new Error(data.error || data.message || 'Avatar upload failed');
       }
 
       toast.success("Avatar uploaded successfully!", { id: toastId });
@@ -370,19 +347,15 @@ export default function AdminManagement({ darkMode }) {
           email: formData.email || '',
           department: formData.department || departments[0],
           barangay,
-          avatar: finalAvatarUrl || ''
+          avatar: finalAvatarUrl || '',
+          updatedAt: serverTimestamp(),
         };
         await updateDoc(adminRef, updatedData);
 
         // 2. Sync changes over to Firebase Auth & Firestore backend update
         if (editingAdmin.uid) {
-          const idToken = await auth.currentUser?.getIdToken(true);
-          const response = await fetch(`${API_BASE_URL}/api/admin/update-admin-auth`, {
+          await fetchFromBackend('admin/update-admin-auth', {
             method: 'POST',
-            headers: { 
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${idToken}`
-            },
             body: JSON.stringify({
               uid: editingAdmin.uid,
               email: formData.email,
@@ -391,27 +364,17 @@ export default function AdminManagement({ darkMode }) {
               department: formData.department,
               barangay,
               address: formData.address,
-              avatar: finalAvatarUrl
+              avatar: finalAvatarUrl,
             }),
           });
-
-          const data = await response.json();
-          if (!response.ok) {
-            throw new Error(data.error || 'Failed to sync authentication profile credentials.');
-          }
         }
 
-        await logAuditAction('Updated admin account', 'update', formData.name);
+        await logEditAdmin({ ...editingAdmin, ...updatedData }, updatedData);
         toast.success('Account updated successfully!');
       } else {
         // Create account on backend (enforces Document ID === Auth UID)
-        const idToken = await auth.currentUser?.getIdToken(true);
-        const response = await fetch(`${API_BASE_URL}/api/admin/create-admin`, {
+        await fetchFromBackend('admin/create-admin', {
           method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${idToken}`
-          },
           body: JSON.stringify({
             email: formData.email,
             password: formData.password,
@@ -420,16 +383,18 @@ export default function AdminManagement({ darkMode }) {
             barangay,
             phone: fullPhone,
             address: formData.address,
-            avatar: finalAvatarUrl
-          })
+            avatar: finalAvatarUrl,
+          }),
         });
 
-        const data = await response.json();
-        if (!response.ok) {
-          throw new Error(data.error || 'Failed to provision admin account on server.');
-        }
-
-        await logAuditAction('Created admin account', 'create', formData.name);
+        await logRegisterAdmin({
+          name: formData.name,
+          email: formData.email,
+          department: formData.department,
+          barangay,
+          phone: fullPhone,
+          address: formData.address,
+        });
         toast.success('Account created successfully!');
       }
       setIsModalOpen(false);
@@ -454,8 +419,9 @@ export default function AdminManagement({ darkMode }) {
         archived: true,
         archivedAt: serverTimestamp(),
         archivedBy: auth.currentUser?.email || 'Unknown',
+        updatedAt: serverTimestamp(),
       });
-      await logAuditAction('Archived admin account', 'archive', adminToArchive.name);
+      await logArchiveAdmin(adminToArchive);
       toast.success('Account archived successfully.');
     } catch (error) {
       console.error('Archive Flow Error:', error);
@@ -474,8 +440,9 @@ export default function AdminManagement({ darkMode }) {
         archived: false,
         archivedAt: null,
         archivedBy: null,
+        updatedAt: serverTimestamp(),
       });
-      await logAuditAction('Restored admin account', 'restore', admin.name);
+      await logRestoreAdmin(admin);
       toast.success('Account restored successfully.');
     } catch (error) {
       console.error('Restore Flow Error:', error);

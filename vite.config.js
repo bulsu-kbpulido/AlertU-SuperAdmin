@@ -11,7 +11,7 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
 
   const backendOrigin = (
-    env.VITE_API_URL || 'https://alertu-server.onrender.com'
+    env.VITE_API_URL || 'https://alertu-server-production.up.railway.app'
   ).replace(/\/+$/, '').replace(/\/api$/i, '');
 
   return {

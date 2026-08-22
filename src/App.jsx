@@ -1,9 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot, updateDoc, serverTimestamp } from 'firebase/firestore';
 import toast from 'react-hot-toast';
 import { auth, db } from './firebase';
 import { useIdleTimer } from './hooks/useIdleTimer';
+import { resolveSuperAdminDocId } from './utils/superAdminDoc';
+import { useAuditLog } from './useAuditLog';
 import LoginPage from './LoginPage';
 import Sidebar from './components/Sidebar';
 import Navbar from './components/Navbar';
@@ -16,17 +18,59 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [activePage, setActivePage] = useState('dashboard');
-  const [darkMode, setDarkMode] = useState(false);
+  
+  // Theme state matching AlertU-Admin pattern: check 'theme' in localStorage with OS preference fallback
+  const [darkMode, setDarkMode] = useState(() => {
+    return localStorage.getItem('theme') === 'dark' || 
+      (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  });
+
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [sessionTimeoutMinutes, setSessionTimeoutMinutes] = useState(0);
+
+  const { logLoginSuccess } = useAuditLog();
+  const hasLoggedSessionRef = useRef(false);
+
+  // Apply dark class to <html> root element whenever darkMode changes
+  useEffect(() => {
+    if (darkMode) {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem('theme', 'light');
+    }
+  }, [darkMode]);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       setCheckingAuth(false);
+
+      if (currentUser && !hasLoggedSessionRef.current) {
+        hasLoggedSessionRef.current = true;
+        try {
+          const docId = await resolveSuperAdminDocId(currentUser);
+          if (docId) {
+            await updateDoc(doc(db, 'superadmin', docId), {
+              lastLogin: serverTimestamp(),
+              lastLoginAt: new Date().toISOString(),
+            });
+          }
+          await logLoginSuccess({
+            uid: currentUser.uid,
+            email: currentUser.email,
+            name: currentUser.displayName || currentUser.email,
+          });
+        } catch (logErr) {
+          console.warn('Could not record SuperAdmin login audit log:', logErr);
+        }
+      } else if (!currentUser) {
+        hasLoggedSessionRef.current = false;
+      }
     });
     return () => unsubscribe();
-  }, []);
+  }, [logLoginSuccess]);
 
   // Listen to global session settings in Firestore when authenticated
   useEffect(() => {
@@ -47,7 +91,9 @@ export default function App() {
   const handleSignOut = async () => {
     try {
       localStorage.removeItem('adminToken');
+      localStorage.removeItem('authToken');
       sessionStorage.removeItem('adminToken');
+      hasLoggedSessionRef.current = false;
       await signOut(auth);
     } catch (error) {
       console.error('Sign-out failed:', error);
