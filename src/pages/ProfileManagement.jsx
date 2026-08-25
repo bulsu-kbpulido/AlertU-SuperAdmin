@@ -10,6 +10,7 @@ import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { resolveSuperAdminDocId } from '../utils/superAdminDoc';
 import { useAuditLog } from '../useAuditLog';
 import { fetchFromBackend } from '../api';
+import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { PasswordStrengthInput, DEFAULT_RULES } from '@/components/spectrumui/password-strength';
 import {
   updatePassword,
@@ -44,6 +45,8 @@ function Spinner({ className = '' }) {
 }
 
 export default function ProfileManagement({ darkMode }) {
+  useDocumentTitle('Profile Settings – AlertU');
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);

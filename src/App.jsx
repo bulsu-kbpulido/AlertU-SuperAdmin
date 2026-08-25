@@ -42,6 +42,28 @@ export default function App() {
     }
   }, [darkMode]);
 
+  // 🏷️ Dynamic Browser Tab Title Listener for SuperAdmin
+  useEffect(() => {
+    if (!user) return;
+    switch (activePage) {
+      case 'dashboard':
+        document.title = 'Dashboard – AlertU';
+        break;
+      case 'admins':
+        document.title = 'Manage Admins – AlertU';
+        break;
+      case 'profile':
+        document.title = 'Profile Settings – AlertU';
+        break;
+      case 'logs':
+        document.title = 'Audit Logs – AlertU';
+        break;
+      default:
+        document.title = 'Dashboard – AlertU';
+        break;
+    }
+  }, [activePage, user]);
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);

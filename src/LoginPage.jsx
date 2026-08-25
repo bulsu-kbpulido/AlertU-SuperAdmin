@@ -15,6 +15,7 @@ import { auth, db } from './firebase';
 import { useAuditLog } from './useAuditLog';
 import { resolveSuperAdminDocId } from './utils/superAdminDoc';
 import ForgotPassword from './pages/ForgotPassword';
+import { useDocumentTitle } from './hooks/useDocumentTitle';
 
 // Shadcn & UI Components
 import { Button } from "@/components/ui/button";
@@ -49,6 +50,9 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function LoginPage() {
   const [showForgotPassword, setShowForgotPassword] = useState(false);
+
+  // 🏷️ Dynamic Document Title
+  useDocumentTitle(showForgotPassword ? 'Forgot Password – AlertU' : 'Login – AlertU');
 
   // --- Login State ---
   const [formData, setFormData] = useState({

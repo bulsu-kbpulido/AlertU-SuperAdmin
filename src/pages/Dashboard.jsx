@@ -9,6 +9,7 @@ import {
 } from 'firebase/firestore';
 import { onAuditLogReceived } from '../socket';
 import { isMeaningfulAdminActivity, formatActionDisplay } from '../utils/auditActivity';
+import { useDocumentTitle } from '../hooks/useDocumentTitle';
 
 function getDepartmentMeta(department, darkMode) {
   const dep = (department || '').toUpperCase();
@@ -39,6 +40,8 @@ const parseDate = (val) => {
 };
 
 export default function Dashboard({ darkMode }) {
+  useDocumentTitle('Dashboard – AlertU');
+
   const [admins, setAdmins] = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
   const [loadingAdmins, setLoadingAdmins] = useState(true);

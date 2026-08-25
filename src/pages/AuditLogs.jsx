@@ -8,6 +8,7 @@ import {
   getActionCategory, 
   formatActionDisplay 
 } from '../utils/auditActivity';
+import { useDocumentTitle } from '../hooks/useDocumentTitle';
 
 const parseDate = (val) => {
   if (!val) return null;
@@ -26,6 +27,8 @@ const CATEGORIES = [
 ];
 
 export default function AuditLogs({ darkMode }) {
+  useDocumentTitle('Audit Logs – AlertU');
+
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');

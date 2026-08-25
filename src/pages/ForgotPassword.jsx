@@ -19,6 +19,7 @@ import warnIcon from '../assets/warnicon.png';
 import triIcon from '../assets/triicon.png';
 import starIcon from '../assets/staricon.png';
 import { BASE_URL } from '../api';
+import { useDocumentTitle } from '../hooks/useDocumentTitle';
 
 const VectorIcon = ({ src, alt, size }) => (
   <img 
@@ -30,6 +31,9 @@ const VectorIcon = ({ src, alt, size }) => (
 );
 
 export default function ForgotPassword({ onBackToLogin }) {
+  // 🏷️ Dynamic Document Title
+  useDocumentTitle('Forgot Password – AlertU');
+
   // Step 1: Send OTP, Step 2: Verify & Reset, Step 3: Success
   const [step, setStep] = useState(1);
 

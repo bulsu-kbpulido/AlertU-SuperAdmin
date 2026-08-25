@@ -26,6 +26,7 @@ import {
 } from 'firebase/firestore';
 import { fetchFromBackend } from '../api';
 import { useAuditLog } from '../useAuditLog';
+import { useDocumentTitle } from '../hooks/useDocumentTitle';
 
 // Helper: Format raw PH numbers (e.g., "09171234567" -> "+639171234567") for react-phone-number-input
 const formatToE164Phone = (phoneNumber) => {
@@ -124,6 +125,8 @@ function SortableHeader({ column, children, align = 'left' }) {
 }
 
 export default function AdminManagement({ darkMode }) {
+  useDocumentTitle('Manage Admins – AlertU');
+
   const [admins, setAdmins] = useState([]);
   const [loading, setLoading] = useState(true);
 
