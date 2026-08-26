@@ -803,7 +803,7 @@ export default function AdminManagement({ darkMode }) {
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
+            <form onSubmit={handleSubmit} autoComplete="off" className="flex flex-col flex-1 min-h-0">
               <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
                 
                 {/* Backblaze B2 Express Proxy Avatar Upload Box */}
@@ -830,6 +830,7 @@ export default function AdminManagement({ darkMode }) {
                     <input
                       type="text" name="name" required value={formData.name} onChange={handleInputChange}
                       placeholder="Juan Dela Cruz"
+                      autoComplete="off"
                       className={`w-full mt-1 px-4 py-2 rounded-lg border focus:ring-4 outline-none ${inputStyling} ${!nameValid ? 'border-red-400' : ''}`}
                     />
                   </div>
@@ -858,8 +859,15 @@ export default function AdminManagement({ darkMode }) {
                   <div>
                     <label className="text-xs font-medium text-slate-500">Email <span className="text-red-500">*</span></label>
                     <input
-                      type="email" name="email" required value={formData.email} onChange={handleInputChange}
-                      placeholder="username@alertu.gov"
+                      type="email" 
+                      name="email" 
+                      required 
+                      autoComplete="off"
+                      data-lpignore="true"
+                      data-form-type="other"
+                      value={formData.email} 
+                      onChange={handleInputChange}
+                      placeholder="example@gmail.com"
                       className={`w-full mt-1 px-4 py-2 rounded-lg border focus:ring-4 outline-none ${inputStyling} ${formData.email && !emailValid ? 'border-red-400' : ''}`}
                     />
                     {formData.email && !emailValid && <p className={errorText}>Enter a valid email address.</p>}
@@ -882,6 +890,7 @@ export default function AdminManagement({ darkMode }) {
                     <input
                       type="text" name="address" value={formData.address} onChange={handleInputChange}
                       placeholder="San Jose, Paombong, Bulacan"
+                      autoComplete="off"
                       className={`w-full mt-1 px-4 py-2 rounded-lg border focus:ring-4 outline-none ${inputStyling}`}
                     />
                   </div>
@@ -896,9 +905,12 @@ export default function AdminManagement({ darkMode }) {
                         name="password"
                         required={!editingAdmin}
                         disabled={!!editingAdmin}
+                        autoComplete="new-password"
+                        data-lpignore="true"
+                        data-form-type="other"
                         value={formData.password}
                         onChange={handleInputChange}
-                        placeholder={editingAdmin ? "••••••••" : "Assign password"}
+                        placeholder="••••••••"
                         className={`w-full px-4 py-2 pr-10 rounded-lg border focus:ring-4 outline-none ${inputStyling} disabled:opacity-50`}
                       />
                       {!editingAdmin && (

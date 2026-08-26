@@ -21,7 +21,6 @@ import { useDocumentTitle } from './hooks/useDocumentTitle';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { 
   Loader2, 
@@ -58,7 +57,6 @@ export default function LoginPage() {
   const [formData, setFormData] = useState({
     email: '',
     password: '',
-    rememberMe: false,
   });
 
   const [showPassword, setShowPassword] = useState(false);
@@ -73,13 +71,6 @@ export default function LoginPage() {
     setFormData((prev) => ({
       ...prev,
       [name]: value,
-    }));
-  };
-
-  const handleCheckboxChange = (checked) => {
-    setFormData((prev) => ({
-      ...prev,
-      rememberMe: checked,
     }));
   };
 
@@ -140,19 +131,13 @@ export default function LoginPage() {
       // 3. Obtain ID token and store session
       const idToken = await user.getIdToken();
       localStorage.setItem('authToken', idToken);
-
-      if (formData.rememberMe) {
-        localStorage.setItem('adminToken', idToken);
-      } else {
-        sessionStorage.setItem('adminToken', idToken);
-      }
+      localStorage.setItem('adminToken', idToken);
 
       // 4. Log Successful Login Audit Event
       await logLoginSuccess({
         uid: user.uid,
         email: user.email,
         name: superAdminData?.name || user.displayName || user.email,
-        rememberMe: formData.rememberMe,
       });
 
     } catch (err) {
@@ -328,24 +313,8 @@ export default function LoginPage() {
               </div>
             </div>
 
-            {/* Row: Remember Me & Forgot Password */}
-            <div className="flex items-center justify-between pt-1">
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="rememberMe"
-                  checked={formData.rememberMe}
-                  onCheckedChange={handleCheckboxChange}
-                  disabled={loading}
-                  className="rounded border-slate-300 data-[state=checked]:bg-blue-700 data-[state=checked]:border-blue-700"
-                />
-                <Label
-                  htmlFor="rememberMe"
-                  className="text-xs font-normal text-slate-600 select-none cursor-pointer"
-                >
-                  Remember this device
-                </Label>
-              </div>
-
+            {/* Row: Forgot Password */}
+            <div className="flex items-center justify-end pt-1">
               <button 
                 type="button"
                 onClick={() => setShowForgotPassword(true)}
