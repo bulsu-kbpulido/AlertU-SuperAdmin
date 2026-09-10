@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
   Plus, Search, Edit2, Archive, ArchiveRestore, X, User,
-  Eye, EyeOff, CheckCircle2, Circle, Loader2, MapPin,
+  Eye, EyeOff, CheckCircle2, Circle, Loader2,
   ArrowUpDown, ArrowUp, ArrowDown, ChevronsLeft, ChevronLeft, ChevronRight, ChevronsRight
 } from 'lucide-react';
 import {
@@ -91,25 +91,6 @@ function Spinner({ className = '' }) {
   return <Loader2 className={`w-3.5 h-3.5 animate-spin ${className}`} />;
 }
 
-const BARANGAY_DEPARTMENT = 'Paombong Barangay Officials';
-
-const DEPARTMENT_STATION_ADDRESSES = {
-  'RHU (Rural Health Unit)': 'Rural Health Unit I, Poblacion, Paombong, Bulacan',
-  'MDRRMO (Municipal Disaster Risk Reduction and Management Office)': 'MDRRMO Building, Poblacion, Paombong, Bulacan',
-  'BFP (Bureau of Fire Protection)': 'Paombong Fire Station, Poblacion, Paombong, Bulacan',
-  'PNP (Philippine National Police)': 'Paombong Municipal Police Station, Poblacion, Paombong, Bulacan',
-};
-
-const PAOMBONG_BARANGAYS = [
-  'Binakod', 'Kapitangan', 'Malumot', 'Masukol', 'Pinalagdan', 'Poblacion',
-  'San Isidro I', 'San Isidro II', 'San Jose', 'San Roque', 'San Vicente',
-  'Santa Cruz', 'Santo Niño', 'Santo Rosario'
-];
-
-function barangayStationAddress(barangay) {
-  return `Barangay Hall, ${barangay}, Paombong, Bulacan`;
-}
-
 function SortableHeader({ column, children, align = 'left' }) {
   const sorted = column.getIsSorted();
   return (
@@ -132,14 +113,6 @@ export default function AdminManagement({ darkMode }) {
 
   const [viewMode, setViewMode] = useState('active');
 
-  const departments = [
-    'BFP (Bureau of Fire Protection)',
-    'PNP (Philippine National Police)',
-    'RHU (Rural Health Unit)',
-    'MDRRMO (Municipal Disaster Risk Reduction and Management Office)',
-    BARANGAY_DEPARTMENT
-  ];
-
   const [searchTerm, setSearchTerm] = useState('');
   const [sorting, setSorting] = useState([]);
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 10 });
@@ -153,9 +126,6 @@ export default function AdminManagement({ darkMode }) {
   const [selectedAvatarFile, setSelectedAvatarFile] = useState(null);
   const [avatarPreview, setAvatarPreview] = useState('');
 
-  const [isBarangayModalOpen, setIsBarangayModalOpen] = useState(false);
-  const [selectedBarangay, setSelectedBarangay] = useState('');
-
   const [isArchiveModalOpen, setIsArchiveModalOpen] = useState(false);
   const [adminToArchive, setAdminToArchive] = useState(null);
   const [isArchiving, setIsArchiving] = useState(false);
@@ -163,7 +133,7 @@ export default function AdminManagement({ darkMode }) {
   const [restoringId, setRestoringId] = useState(null);
 
   const [formData, setFormData] = useState({
-    name: '', address: '', email: '', password: '', department: departments[0], avatar: ''
+    name: '', email: '', password: '', avatar: ''
   });
   const [phone, setPhone] = useState('');
 
@@ -194,9 +164,8 @@ export default function AdminManagement({ darkMode }) {
 
   const openCreateModal = () => {
     setEditingAdmin(null);
-    setFormData({ name: '', address: '', email: '', password: '', department: departments[0], avatar: '' });
+    setFormData({ name: '', email: '', password: '', avatar: '' });
     setPhone('');
-    setSelectedBarangay('');
     setSelectedAvatarFile(null);
     setAvatarPreview('');
     setShowPassword(false);
@@ -207,15 +176,12 @@ export default function AdminManagement({ darkMode }) {
     setEditingAdmin(admin);
     setFormData({
       name: admin.name || '',
-      address: admin.address || '',
       email: admin.email || '',
-      department: admin.department || departments[0],
       avatar: admin.avatar || '',
       password: '••••••••',
     });
     // Format existing phone numbers for proper validation
     setPhone(formatToE164Phone(admin.phone || ''));
-    setSelectedBarangay(admin.department === BARANGAY_DEPARTMENT ? (admin.barangay || '') : '');
     setSelectedAvatarFile(null);
     setAvatarPreview(admin.avatar || '');
     setShowPassword(false);
@@ -225,28 +191,6 @@ export default function AdminManagement({ darkMode }) {
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
-  };
-
-  const handleDepartmentChange = (e) => {
-    const nextDepartment = e.target.value;
-
-    if (nextDepartment === BARANGAY_DEPARTMENT) {
-      setFormData(prev => ({ ...prev, department: nextDepartment, address: selectedBarangay ? barangayStationAddress(selectedBarangay) : '' }));
-      setIsBarangayModalOpen(true);
-      return;
-    }
-
-    setFormData(prev => ({
-      ...prev,
-      department: nextDepartment,
-      address: DEPARTMENT_STATION_ADDRESSES[nextDepartment] || prev.address
-    }));
-  };
-
-  const selectBarangay = (barangay) => {
-    setSelectedBarangay(barangay);
-    setFormData(prev => ({ ...prev, address: barangayStationAddress(barangay) }));
-    setIsBarangayModalOpen(false);
   };
 
   // Set file locally for preview without uploading immediately
@@ -338,7 +282,6 @@ export default function AdminManagement({ darkMode }) {
 
       // Step B: Save changes / Create account with resolved avatar URL
       const fullPhone = phone;
-      const barangay = formData.department === BARANGAY_DEPARTMENT ? (selectedBarangay || null) : null;
 
       if (editingAdmin) {
         // 1. Update Firestore Database
@@ -346,10 +289,7 @@ export default function AdminManagement({ darkMode }) {
         const updatedData = {
           name: formData.name || '',
           phone: fullPhone,
-          address: formData.address || '',
           email: formData.email || '',
-          department: formData.department || departments[0],
-          barangay,
           avatar: finalAvatarUrl || '',
           updatedAt: serverTimestamp(),
         };
@@ -364,9 +304,6 @@ export default function AdminManagement({ darkMode }) {
               email: formData.email,
               name: formData.name,
               phone: fullPhone,
-              department: formData.department,
-              barangay,
-              address: formData.address,
               avatar: finalAvatarUrl,
             }),
           });
@@ -382,10 +319,7 @@ export default function AdminManagement({ darkMode }) {
             email: formData.email,
             password: formData.password,
             name: formData.name,
-            department: formData.department,
-            barangay,
             phone: fullPhone,
-            address: formData.address,
             avatar: finalAvatarUrl,
           }),
         });
@@ -393,10 +327,7 @@ export default function AdminManagement({ darkMode }) {
         await logRegisterAdmin({
           name: formData.name,
           email: formData.email,
-          department: formData.department,
-          barangay,
           phone: fullPhone,
-          address: formData.address,
         });
         toast.success('Account created successfully!');
       }
@@ -512,37 +443,14 @@ export default function AdminManagement({ darkMode }) {
       },
     },
     {
-      id: 'department',
-      accessorFn: (admin) => admin.department || '',
-      sortingFn: caseInsensitiveSort,
-      header: ({ column }) => <SortableHeader column={column}>Agency</SortableHeader>,
-      cell: ({ row }) => {
-        const admin = row.original;
-        return (
-          <span className={`inline-block px-2.5 py-1 text-xs font-semibold rounded-md border ${
-            admin.department?.includes('BFP') ? 'bg-red-500/10 border-red-500/20 text-red-500 dark:text-red-400' :
-            admin.department?.includes('PNP') ? 'bg-blue-500/10 border-blue-500/20 text-blue-500 dark:text-blue-400' :
-            admin.department?.includes('RHU') ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500 dark:text-emerald-400' :
-            'bg-purple-500/10 border-purple-500/20 text-purple-500 dark:text-purple-400'
-          }`}>
-            {admin.department}
-            {admin.department === BARANGAY_DEPARTMENT && admin.barangay && ` — ${admin.barangay}`}
-          </span>
-        );
-      },
-    },
-    {
       id: 'contact',
       accessorFn: (admin) => admin.phone || '',
       sortingFn: caseInsensitiveSort,
-      header: ({ column }) => <SortableHeader column={column}>Contact/Address</SortableHeader>,
+      header: ({ column }) => <SortableHeader column={column}>Contact</SortableHeader>,
       cell: ({ row }) => {
         const admin = row.original;
         return (
-          <div className={textSecondary}>
-            <div className="font-semibold text-slate-700 dark:text-slate-300">{admin.phone}</div>
-            <div className="text-xs opacity-85 mt-0.5">{admin.address}</div>
-          </div>
+          <div className={`font-semibold ${darkMode ? 'text-slate-300' : 'text-slate-700'}`}>{admin.phone}</div>
         );
       },
     },
@@ -597,7 +505,6 @@ export default function AdminManagement({ darkMode }) {
       return (
         (admin.name?.toLowerCase() || '').includes(term) ||
         (admin.adminId?.toLowerCase() || '').includes(term) ||
-        (admin.department?.toLowerCase() || '').includes(term) ||
         (admin.email?.toLowerCase() || '').includes(term)
       );
     },
@@ -626,7 +533,7 @@ export default function AdminManagement({ darkMode }) {
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input 
               type="text" 
-              placeholder="Search by name, email, or department..." 
+              placeholder="Search by name or email..." 
               value={searchTerm}
               onChange={(e) => { setSearchTerm(e.target.value); setPagination(p => ({ ...p, pageIndex: 0 })); }}
               className={`w-full pl-10 pr-4 py-2 text-sm rounded-xl border focus:outline-hidden focus:ring-4 transition-all ${inputStyling}`}
@@ -834,15 +741,6 @@ export default function AdminManagement({ darkMode }) {
                       className={`w-full mt-1 px-4 py-2 rounded-lg border focus:ring-4 outline-none ${inputStyling} ${!nameValid ? 'border-red-400' : ''}`}
                     />
                   </div>
-                  <div>
-                    <label className="text-xs font-medium text-slate-500">Department</label>
-                    <select
-                      name="department" value={formData.department} onChange={handleDepartmentChange}
-                      className={`w-full mt-1 px-4 py-2 rounded-lg border focus:ring-4 outline-none ${inputStyling}`}
-                    >
-                      {departments.map(dept => <option key={dept} value={dept}>{dept}</option>)}
-                    </select>
-                  </div>
 
                   <div>
                     <label className="text-xs font-medium text-slate-500">Phone <span className="text-red-500">*</span></label>
@@ -871,28 +769,6 @@ export default function AdminManagement({ darkMode }) {
                       className={`w-full mt-1 px-4 py-2 rounded-lg border focus:ring-4 outline-none ${inputStyling} ${formData.email && !emailValid ? 'border-red-400' : ''}`}
                     />
                     {formData.email && !emailValid && <p className={errorText}>Enter a valid email address.</p>}
-                  </div>
-
-                  <div>
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-medium text-slate-500">Station Address</label>
-                      {formData.department === BARANGAY_DEPARTMENT && (
-                        <button
-                          type="button"
-                          onClick={() => setIsBarangayModalOpen(true)}
-                          className="inline-flex items-center gap-1 text-xs font-semibold text-blue-500 hover:text-blue-600 cursor-pointer"
-                        >
-                          <MapPin className="w-3.5 h-3.5" />
-                          {selectedBarangay ? 'Change Barangay' : 'Choose Barangay'}
-                        </button>
-                      )}
-                    </div>
-                    <input
-                      type="text" name="address" value={formData.address} onChange={handleInputChange}
-                      placeholder="San Jose, Paombong, Bulacan"
-                      autoComplete="off"
-                      className={`w-full mt-1 px-4 py-2 rounded-lg border focus:ring-4 outline-none ${inputStyling}`}
-                    />
                   </div>
 
                   <div>
@@ -965,51 +841,6 @@ export default function AdminManagement({ darkMode }) {
                 )}
               </div>
             </form>
-          </div>
-        </div>
-      )}
-
-      {/* Barangay Picker Modal */}
-      {isBarangayModalOpen && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-fade-in">
-          <div className={`w-full max-w-md rounded-2xl border p-6 shadow-xl relative scale-in-center transition-all ${
-            darkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-800'
-          }`}>
-            <div className="flex items-start justify-between gap-4 mb-4">
-              <div className="flex items-start gap-3">
-                <div className="p-2.5 bg-purple-500/10 text-purple-500 rounded-xl shrink-0">
-                  <MapPin className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold">Select Barangay</h3>
-                  <p className={`text-xs mt-0.5 ${textSecondary}`}>Sets this admin's station to the chosen barangay's hall.</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsBarangayModalOpen(false)}
-                className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 shrink-0"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2 max-h-80 overflow-y-auto pr-1">
-              {PAOMBONG_BARANGAYS.map((barangay) => (
-                <button
-                  key={barangay}
-                  type="button"
-                  onClick={() => selectBarangay(barangay)}
-                  className={`text-left px-3 py-2.5 rounded-lg border text-sm font-medium transition-colors cursor-pointer ${
-                    selectedBarangay === barangay
-                      ? 'bg-purple-600 border-purple-600 text-white'
-                      : darkMode ? 'border-slate-800 hover:bg-slate-800 text-slate-200' : 'border-slate-200 hover:bg-slate-50 text-slate-700'
-                  }`}
-                >
-                  {barangay}
-                </button>
-              ))}
-            </div>
           </div>
         </div>
       )}
