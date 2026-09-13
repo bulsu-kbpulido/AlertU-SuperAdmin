@@ -112,7 +112,6 @@ export default function AuditLogs({ darkMode }) {
         const adminId = String(log.adminId || '').toLowerCase();
         const action = String(log.action || '').toLowerCase();
         const target = String(log.target || log.targetUser || '').toLowerCase();
-        const department = String(log.department || '').toLowerCase();
 
         return (
           rawString.includes(search) ||
@@ -121,8 +120,7 @@ export default function AuditLogs({ darkMode }) {
           adminName.includes(search) ||
           adminId.includes(search) ||
           action.includes(search) ||
-          target.includes(search) ||
-          department.includes(search)
+          target.includes(search)
         );
       });
     }
@@ -270,11 +268,6 @@ export default function AuditLogs({ darkMode }) {
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className={`text-sm font-bold ${darkMode ? 'text-white' : 'text-slate-900'}`}>
                           {actionTitle}
-                        </span>
-                        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-md border ${
-                          darkMode ? 'bg-blue-950/60 text-blue-400 border-blue-800/60' : 'bg-blue-50 text-blue-700 border-blue-100'
-                        }`}>
-                          {log.department || log.adminId || 'AlertU Admin'}
                         </span>
                       </div>
                       <p className={`text-xs font-mono break-all leading-relaxed ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>

@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import { Activity, Users, UserCheck, Clock, FileText, Building2, ShieldCheck, CheckCircle2 } from 'lucide-react';
+import { Activity, Users, UserCheck, Clock, FileText, AlertTriangle, Inbox } from 'lucide-react';
 import { db } from '../firebase';
 import {
   collection,
@@ -11,26 +11,8 @@ import { onAuditLogReceived } from '../socket';
 import { isMeaningfulAdminActivity, formatActionDisplay } from '../utils/auditActivity';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 
-function getDepartmentMeta(department, darkMode) {
-  const dep = (department || '').toUpperCase();
-
-  if (dep.includes('BFP')) {
-    return { label: 'BFP', color: darkMode ? 'text-red-400 bg-red-950/40 border-red-500' : 'text-red-600 bg-red-50 border-red-500' };
-  }
-  if (dep.includes('PNP') || dep.includes('PP') || dep.includes('PULIS')) {
-    return { label: 'PNP', color: darkMode ? 'text-blue-400 bg-blue-950/40 border-blue-500' : 'text-blue-600 bg-blue-50 border-blue-500' };
-  }
-  if (dep.includes('RHU')) {
-    return { label: 'RHU', color: darkMode ? 'text-emerald-400 bg-emerald-950/40 border-emerald-500' : 'text-emerald-600 bg-emerald-50 border-emerald-500' };
-  }
-  if (dep.includes('MDRRMO')) {
-    return { label: 'MDRRMO', color: darkMode ? 'text-amber-400 bg-amber-950/40 border-amber-500' : 'text-amber-600 bg-amber-50 border-amber-500' };
-  }
-  if (dep.includes('BARANGAY')) {
-    return { label: 'Barangay Officials', color: darkMode ? 'text-purple-400 bg-purple-950/40 border-purple-500' : 'text-purple-600 bg-purple-50 border-purple-500' };
-  }
-  return { label: department || 'Unassigned', color: darkMode ? 'text-slate-400 bg-slate-800/40 border-slate-500' : 'text-slate-600 bg-slate-50 border-slate-400' };
-}
+const RESOLVED_ACTIONS = new Set(['RESOLVE_REPORT', 'ARCHIVE_REPORT', 'REJECT_REPORT']);
+const REPORT_FETCH_LIMIT = 100;
 
 const parseDate = (val) => {
   if (!val) return null;
@@ -39,13 +21,29 @@ const parseDate = (val) => {
   return isNaN(d.getTime()) ? null : d;
 };
 
+// Compact "how long ago" string for surfacing stale/unreviewed reports
+const timeAgo = (date) => {
+  if (!date) return '';
+  const diffMs = Date.now() - date.getTime();
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+};
+
 export default function Dashboard({ darkMode }) {
   useDocumentTitle('Dashboard – AlertU');
 
   const [admins, setAdmins] = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
+  const [reports, setReports] = useState([]);
   const [loadingAdmins, setLoadingAdmins] = useState(true);
   const [loadingLogs, setLoadingLogs] = useState(true);
+  const [loadingReports, setLoadingReports] = useState(true);
+  const [reportsError, setReportsError] = useState(null);
 
   // 1. Real-time Firestore sync for Admins
   useEffect(() => {
@@ -110,6 +108,29 @@ export default function Dashboard({ darkMode }) {
     return () => unsubscribeSocket();
   }, []);
 
+  // 4. Real-time Firestore sync for Reports (read-only, for Pending Review oversight)
+  useEffect(() => {
+    const reportsQuery = query(
+      collection(db, 'reports'),
+      limit(REPORT_FETCH_LIMIT)
+    );
+    const unsubscribe = onSnapshot(
+      reportsQuery,
+      (snapshot) => {
+        const reportList = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+        setReports(reportList);
+        setLoadingReports(false);
+        setReportsError(null);
+      },
+      (error) => {
+        console.error('Error fetching reports from Firestore:', error);
+        setReportsError(error.message || 'Unable to load reports.');
+        setLoadingReports(false);
+      }
+    );
+    return () => unsubscribe();
+  }, []);
+
   // Filter out noise so SuperAdmin focuses purely on meaningful admin actions
   const meaningfulLogs = useMemo(() => {
     return auditLogs.filter(isMeaningfulAdminActivity);
@@ -122,17 +143,67 @@ export default function Dashboard({ darkMode }) {
     (a) => a.status === 'active' || a.status === undefined || a.status === null
   ).length;
 
-  const roleCounts = nonArchivedAdmins.reduce((acc, admin) => {
-    const { label } = getDepartmentMeta(admin.department, darkMode);
-    acc[label] = (acc[label] || 0) + 1;
-    return acc;
-  }, {});
+  // Pending Review: reports with no status yet (not verified, not rejected, not duplicate) —
+  // meaning no admin has taken any action on them yet.
+  const pendingReports = useMemo(() => {
+    const results = reports
+      .filter((r) => !r.status && r.isDuplicate !== true)
+      .map((r) => ({
+        id: r.reportID || r.id,
+        title: r.reportTitle || r.incidentType || r.hazard || 'General Incident',
+        submittedAt: parseDate(r.timestamp || r.createdAt || r.submittedAt),
+      }));
+
+    return results.sort((a, b) => (a.submittedAt?.getTime() || 0) - (b.submittedAt?.getTime() || 0));
+  }, [reports]);
+
+  // Active Incidents: reports with a generated share link that don't yet have a
+  // later resolve/archive/reject action logged against the same target.
+  const activeIncidents = useMemo(() => {
+    const byTarget = {};
+    auditLogs.forEach((log) => {
+      const target = log.target || log.targetUser;
+      if (!target) return;
+      if (!byTarget[target]) byTarget[target] = [];
+      byTarget[target].push(log);
+    });
+
+    const results = [];
+    Object.entries(byTarget).forEach(([target, logs]) => {
+      const sorted = [...logs].sort((a, b) => {
+        const aTime = parseDate(a.createdAt)?.getTime() || parseDate(a.timestamp)?.getTime() || 0;
+        const bTime = parseDate(b.createdAt)?.getTime() || parseDate(b.timestamp)?.getTime() || 0;
+        return bTime - aTime;
+      });
+
+      const shareLog = sorted.find((l) => String(l.action || '').toUpperCase() === 'GENERATE_SHARE_LINK');
+      if (!shareLog) return;
+
+      const shareTime = parseDate(shareLog.createdAt)?.getTime() || parseDate(shareLog.timestamp)?.getTime() || 0;
+
+      const hasLaterResolution = sorted.some((l) => {
+        const act = String(l.action || '').toUpperCase();
+        if (!RESOLVED_ACTIONS.has(act)) return false;
+        const t = parseDate(l.createdAt)?.getTime() || parseDate(l.timestamp)?.getTime() || 0;
+        return t >= shareTime;
+      });
+
+      if (hasLaterResolution) return;
+
+      results.push({
+        target,
+        adminName: shareLog.adminName || shareLog.performedBy || 'Admin',
+        time: parseDate(shareLog.createdAt) || parseDate(shareLog.timestamp),
+      });
+    });
+
+    return results.sort((a, b) => (b.time?.getTime() || 0) - (a.time?.getTime() || 0));
+  }, [auditLogs]);
 
   // Compute Last Admin Login from both Firestore admin documents and audit_logs events
   const lastLoginInfo = useMemo(() => {
     let latestAdmin = null;
     let latestDate = null;
-    let department = '';
 
     // Source 1: Check admin records
     nonArchivedAdmins.forEach((admin) => {
@@ -140,7 +211,6 @@ export default function Dashboard({ darkMode }) {
       if (d && (!latestDate || d > latestDate)) {
         latestDate = d;
         latestAdmin = admin.name || admin.displayName || admin.fullName || admin.email || 'Admin';
-        department = admin.department || '';
       }
     });
 
@@ -160,7 +230,6 @@ export default function Dashboard({ darkMode }) {
         if (d && (!latestDate || d > latestDate)) {
           latestDate = d;
           latestAdmin = log.adminName || log.performedBy || log.name || log.metadata?.email || log.adminId || 'Admin';
-          department = log.department || log.metadata?.department || department;
         }
       }
     });
@@ -180,7 +249,7 @@ export default function Dashboard({ darkMode }) {
               })
             : 'No records',
           subtitle: newest.name
-            ? `Registered: ${newest.name}${newest.department ? ` (${newest.department})` : ''}`
+            ? `Registered: ${newest.name}`
             : 'No sign-ins recorded yet',
         };
       }
@@ -199,13 +268,9 @@ export default function Dashboard({ darkMode }) {
       hour12: true,
     });
 
-    const actorDisplay = department
-      ? `by ${latestAdmin} (${department})`
-      : `by ${latestAdmin}`;
-
     return {
       value: dateFormatted,
-      subtitle: actorDisplay,
+      subtitle: `by ${latestAdmin}`,
     };
   }, [nonArchivedAdmins, auditLogs]);
 
@@ -247,6 +312,8 @@ export default function Dashboard({ darkMode }) {
   const cardBg = darkMode ? "bg-slate-900 border-slate-800 text-white" : "bg-white border-slate-200 text-slate-800";
   const rowBg = darkMode ? "bg-slate-950/50 border-slate-800 hover:border-slate-700" : "bg-slate-50 border-slate-100 hover:border-slate-300";
   const innerIconBg = darkMode ? "bg-slate-800/80" : "bg-white/80";
+  const pendingRowBorder = darkMode ? "border-rose-500 bg-rose-950/30" : "border-rose-500 bg-rose-50";
+  const incidentRowBorder = darkMode ? "border-amber-500 bg-amber-950/30" : "border-amber-500 bg-amber-50";
 
   const formatTimestamp = (ts, isoTimestamp) => {
     const d = parseDate(ts) || parseDate(isoTimestamp);
@@ -327,9 +394,6 @@ export default function Dashboard({ darkMode }) {
                     <span className={`text-xs font-mono font-bold block ${darkMode ? 'text-slate-300' : 'text-slate-600'}`}>
                       {formatTimestamp(log.createdAt, log.timestamp)}
                     </span>
-                    <span className="text-[10px] text-blue-600 dark:text-blue-400 font-semibold uppercase tracking-wider">
-                      {log.department || log.adminId || 'AlertU'}
-                    </span>
                   </div>
                 </div>
               );
@@ -337,31 +401,74 @@ export default function Dashboard({ darkMode }) {
           </div>
         </div>
 
-        {/* Roles Distribution */}
+        {/* Incident Oversight: Pending Review + Active Incidents */}
         <div className={`p-6 rounded-xl border shadow-xs ${cardBg}`}>
-          <div className={`flex items-center justify-between border-b pb-4 ${darkMode ? 'border-slate-800' : 'border-slate-100'}`}>
-            <h2 className="text-lg font-bold tracking-tight flex items-center gap-2">
-              <Building2 className="w-5 h-5 text-blue-500" />
-              Roles Assigned
+
+          {/* Pending Review section */}
+          <div className="flex items-center justify-between">
+            <h2 className="text-base font-bold tracking-tight flex items-center gap-2">
+              <Inbox className="w-4.5 h-4.5 text-rose-500" />
+              Pending Review
             </h2>
+            <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${darkMode ? 'bg-rose-950/50 text-rose-400' : 'bg-rose-100 text-rose-700'}`}>
+              {pendingReports.length}
+            </span>
+          </div>
+          <p className="text-xs text-slate-400 mt-1.5">
+            Reports no admin has acted on yet.
+          </p>
+
+          <div className="mt-3 space-y-2.5">
+            {loadingReports && (
+              <p className={`text-sm ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>Loading reports...</p>
+            )}
+            {!loadingReports && reportsError && (
+              <p className="text-xs text-rose-500">Unable to load reports right now.</p>
+            )}
+            {!loadingReports && !reportsError && pendingReports.length === 0 && (
+              <p className={`text-sm ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>No unreviewed reports.</p>
+            )}
+            {pendingReports.slice(0, 5).map((r) => (
+              <div key={r.id} className={`p-2.5 rounded-lg border-l-4 ${pendingRowBorder}`}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm font-bold truncate">{r.id}</span>
+                  <span className="text-[11px] font-semibold text-rose-500 shrink-0">{timeAgo(r.submittedAt)}</span>
+                </div>
+                <span className="text-xs text-slate-500 dark:text-slate-400 block mt-0.5 truncate capitalize">{r.title}</span>
+              </div>
+            ))}
           </div>
 
-          <div className="mt-4 space-y-3">
-            {loadingAdmins && (
-              <p className={`text-sm ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>Loading roles...</p>
+          {/* Active Incidents section */}
+          <div className={`flex items-center justify-between mt-6 pt-5 border-t ${darkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+            <h2 className="text-base font-bold tracking-tight flex items-center gap-2">
+              <AlertTriangle className="w-4.5 h-4.5 text-amber-500" />
+              Active Incidents
+            </h2>
+            <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${darkMode ? 'bg-amber-950/50 text-amber-400' : 'bg-amber-100 text-amber-700'}`}>
+              {activeIncidents.length}
+            </span>
+          </div>
+          <p className="text-xs text-slate-400 mt-1.5">
+            Incidents with a share link, awaiting resolution.
+          </p>
+
+          <div className="mt-3 space-y-2.5">
+            {loadingLogs && (
+              <p className={`text-sm ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>Loading incidents...</p>
             )}
-            {!loadingAdmins && Object.keys(roleCounts).length === 0 && (
-              <p className={`text-sm ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>No admins assigned yet.</p>
+            {!loadingLogs && activeIncidents.length === 0 && (
+              <p className={`text-sm ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>No open incidents right now.</p>
             )}
-            {Object.entries(roleCounts).map(([label, count]) => {
-              const { color } = getDepartmentMeta(label, darkMode);
-              return (
-                <div key={label} className={`flex items-center justify-between p-3 rounded-lg border-l-4 ${color}`}>
-                  <span className="text-sm font-semibold">{label}</span>
-                  <span className="text-sm font-black">{count}</span>
-                </div>
-              );
-            })}
+            {activeIncidents.slice(0, 5).map((incident) => (
+              <div key={incident.target} className={`p-2.5 rounded-lg border-l-4 ${incidentRowBorder}`}>
+                <span className="text-sm font-bold block">{incident.target}</span>
+                <span className="text-xs text-slate-500 dark:text-slate-400 block mt-0.5">
+                  By {incident.adminName}
+                  {incident.time ? ` • ${formatTimestamp(incident.time)}` : ''}
+                </span>
+              </div>
+            ))}
           </div>
         </div>
 
