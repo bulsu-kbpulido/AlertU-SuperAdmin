@@ -34,6 +34,7 @@ let cachedUserData = null;
 // Multi-subscriber callback set for Audit Logs & Admin Movements
 const auditLogCallbacks = new Set();
 const adminActionCallbacks = new Set();
+const adminPresenceCallbacks = new Set();
 
 // Central Event Handler for Administrative Movements & Audit Trail Signals
 const handleAuditLogEvent = (data) => {
@@ -44,19 +45,38 @@ const handleAuditLogEvent = (data) => {
 const handleAdminActionEvent = (data) => {
   console.log('⚡ [Admin Action Event Received]:', data);
   adminActionCallbacks.forEach((callback) => callback(data));
+  auditLogCallbacks.forEach((callback) => callback(data));
+};
+
+const handleAdminPresenceEvent = (data) => {
+  console.log('👤 [Admin Presence Event Received]:', data);
+  adminPresenceCallbacks.forEach((callback) => callback(data));
 };
 
 // Bind real-time event listeners across multiple event aliases
 socket.on('AUDIT_LOG_EVENT', handleAuditLogEvent);
-socket.on('ADMIN_ACTION_EVENT', handleAuditLogEvent);
-socket.on('admin_movement_log', handleAuditLogEvent);
-
 socket.on('ADMIN_ACTION_EVENT', handleAdminActionEvent);
+socket.on('admin_action_event', handleAdminActionEvent);
+socket.on('admin_movement_log', handleAuditLogEvent);
+socket.on('admin_citizen_audit_log', handleAuditLogEvent);
 socket.on('CITIZEN_REPORT_UPDATED', handleAdminActionEvent);
+
+// Admin Presence events
+socket.on('admin_presence_changed', handleAdminPresenceEvent);
+socket.on('admin_presence', handleAdminPresenceEvent);
 
 // ==========================================
 // 🛡️ SUPERADMIN AUDIT LOG & ACTION LISTENERS
 // ==========================================
+
+/**
+ * Register a callback to listen for real-time admin presence changes.
+ */
+export const onAdminPresenceChanged = (callback) => {
+  if (typeof callback !== 'function') return () => {};
+  adminPresenceCallbacks.add(callback);
+  return () => adminPresenceCallbacks.delete(callback);
+};
 
 /**
  * Register a callback to listen for real-time audit logs and admin movements.

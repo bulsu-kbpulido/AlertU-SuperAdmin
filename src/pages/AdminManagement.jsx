@@ -1,894 +1,739 @@
-import { useState, useEffect, useMemo } from 'react';
-import {
-  Plus, Search, Edit2, Archive, ArchiveRestore, X, User,
-  Eye, EyeOff, CheckCircle2, Circle, Loader2,
-  ArrowUpDown, ArrowUp, ArrowDown, ChevronsLeft, ChevronLeft, ChevronRight, ChevronsRight
-} from 'lucide-react';
-import {
-  useReactTable,
-  getCoreRowModel,
-  getSortedRowModel,
-  getFilteredRowModel,
-  getPaginationRowModel,
-  flexRender,
-} from '@tanstack/react-table';
-import toast, { Toaster } from 'react-hot-toast'; 
-import { isValidPhoneNumber } from 'react-phone-number-input';
-import { PhoneInput } from '@/components/reui/phone-input';
-
-import { db, auth } from '../firebase'; 
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  collection, 
-  onSnapshot, 
-  doc, 
-  updateDoc, 
-  serverTimestamp
-} from 'firebase/firestore';
+  UserPlus, 
+  RefreshCw, 
+  Search, 
+  Users, 
+  Archive, 
+  Eye, 
+  Edit3, 
+  FolderArchive, 
+  ChevronLeft, 
+  ChevronRight,
+  ShieldCheck,
+  ShieldAlert,
+  UserCheck,
+  UserX,
+  Loader2,
+  AlertTriangle,
+  Wifi,
+  WifiOff
+} from 'lucide-react';
+import toast, { Toaster } from 'react-hot-toast';
+import { collection, onSnapshot, getDocs, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { db, auth } from '../firebase';
+import { socket, joinSocketRoom } from '../socket';
 import { fetchFromBackend } from '../api';
 import { useAuditLog } from '../useAuditLog';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 
-// Helper: Format raw PH numbers (e.g., "09171234567" -> "+639171234567") for react-phone-number-input
-const formatToE164Phone = (phoneNumber) => {
-  if (!phoneNumber) return '';
-  let cleaned = String(phoneNumber).trim();
-  if (cleaned.startsWith('09')) {
-    return `+63${cleaned.slice(1)}`;
+// Modular Action Modals matching AlertU-Admin citizen_utilities pattern
+import Create_Admin from '../admin_utilities/Create_Admin';
+import View_Admin from '../admin_utilities/View_Admin';
+import Edit_Admin from '../admin_utilities/Edit_Admin';
+import Archive_Admin from '../admin_utilities/Archive_Admin';
+import StatusToggleAlertDialog from '../admin_utilities/StatusToggleAlertDialog';
+import ArchivedAdminsTable from '../admin_utilities/ArchivedAdminsTable';
+
+// Helper: Extract unique ID
+const getAdminId = (a) => a?.adminId || a?.id || a?.uid;
+
+// Helper: Extract initials for avatar fallback
+const getInitials = (name) => {
+  if (!name) return '?';
+  return name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase();
+};
+
+const checkIsAccountEnabled = (admin) => {
+  if (!admin) return false;
+  if (typeof admin.isDisabled === 'boolean') {
+    return !admin.isDisabled;
   }
-  if (!cleaned.startsWith('+') && cleaned.startsWith('63')) {
-    return `+${cleaned}`;
-  }
-  return cleaned;
+  return admin.status !== 'Disabled' && admin.status !== 'disabled';
 };
 
-// TanStack Table case-insensitive alphabetical compare
-const caseInsensitiveSort = (rowA, rowB, columnId) => {
-  const a = String(rowA.getValue(columnId) ?? '');
-  const b = String(rowB.getValue(columnId) ?? '');
-  return a.localeCompare(b, undefined, { sensitivity: 'base' });
-};
-
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-const PASSWORD_REQUIREMENTS = [
-  { key: 'length', label: 'At least 8 characters', test: (pw) => pw.length >= 8 },
-  { key: 'upper', label: 'One uppercase letter', test: (pw) => /[A-Z]/.test(pw) },
-  { key: 'number', label: 'One number', test: (pw) => /[0-9]/.test(pw) },
-  { key: 'special', label: 'One special character', test: (pw) => /[^A-Za-z0-9]/.test(pw) },
-];
-
-function getPasswordStrength(password) {
-  if (!password) return { label: '', score: 0, color: '' };
-  const metCount = PASSWORD_REQUIREMENTS.filter((r) => r.test(password)).length;
-  const longBonus = password.length >= 12 ? 1 : 0;
-  const score = Math.min(metCount + longBonus, 5);
-
-  if (score <= 1) return { label: 'Weak', score: 1, color: 'bg-red-500' };
-  if (score <= 3) return { label: 'Fair', score: 2, color: 'bg-amber-500' };
-  if (score <= 4) return { label: 'Good', score: 3, color: 'bg-blue-500' };
-  return { label: 'Strong', score: 4, color: 'bg-emerald-500' };
-}
-
-// Badge component matching shadcn's visual style
-const BADGE_VARIANTS = {
-  default: 'bg-blue-600 text-white',
-  secondary: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200',
-  destructive: 'bg-red-600 text-white',
-  warning: 'bg-amber-600 text-white',
-  success: 'bg-emerald-600 text-white',
-  outline: 'border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300',
-};
-
-function Badge({ variant = 'default', children, className = '' }) {
+// --- Framer Motion Live Presence Indicator matching AlertU-Admin ---
+const PresenceBadge = ({ isActive }) => {
   return (
-    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${BADGE_VARIANTS[variant]} ${className}`}>
-      {children}
-    </span>
+    <div className="relative flex items-center h-7 overflow-hidden">
+      <AnimatePresence mode="wait" initial={false}>
+        {isActive ? (
+          <motion.span
+            key="online-badge"
+            initial={{ opacity: 0, y: 6, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -6, scale: 0.95 }}
+            transition={{ duration: 0.25, ease: 'easeInOut' }}
+            className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-400"
+          >
+            <span className="relative flex h-2 w-2">
+              <motion.span
+                animate={{ scale: [1, 2, 1], opacity: [0.7, 0, 0.7] }}
+                transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+                className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"
+              />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+            </span>
+            <Wifi className="h-3 w-3" />
+            Online
+          </motion.span>
+        ) : (
+          <motion.span
+            key="offline-badge"
+            initial={{ opacity: 0, y: 6, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -6, scale: 0.95 }}
+            transition={{ duration: 0.25, ease: 'easeInOut' }}
+            className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"
+          >
+            <span className="h-2 w-2 rounded-full bg-slate-400 dark:bg-slate-500" />
+            <WifiOff className="h-3 w-3" />
+            Offline
+          </motion.span>
+        )}
+      </AnimatePresence>
+    </div>
   );
-}
+};
 
-function Spinner({ className = '' }) {
-  return <Loader2 className={`w-3.5 h-3.5 animate-spin ${className}`} />;
-}
-
-function SortableHeader({ column, children, align = 'left' }) {
-  const sorted = column.getIsSorted();
+// --- Shadcn Style Table Loading Skeleton matching AlertU-Admin ---
+const TableSkeleton = () => {
   return (
-    <button
-      type="button"
-      onClick={() => column.toggleSorting(sorted === 'asc')}
-      className={`inline-flex items-center gap-1.5 uppercase tracking-wider text-xs font-semibold hover:text-slate-700 dark:hover:text-slate-200 transition-colors cursor-pointer ${align === 'right' ? 'justify-end w-full' : ''}`}
-    >
-      {children}
-      {sorted === 'asc' ? <ArrowUp className="w-3 h-3" /> : sorted === 'desc' ? <ArrowDown className="w-3 h-3" /> : <ArrowUpDown className="w-3 h-3 opacity-40" />}
-    </button>
+    <div className="w-full">
+      <div className="divide-y divide-slate-100 dark:divide-slate-800">
+        {[...Array(5)].map((_, i) => (
+          <div key={i} className="flex items-center justify-between p-4 space-x-4 animate-pulse">
+            <div className="h-7 bg-slate-200 dark:bg-slate-700/80 rounded-md w-24"></div>
+            <div className="flex-1 space-y-2">
+              <div className="h-4 bg-slate-200 dark:bg-slate-700/80 rounded w-1/4"></div>
+              <div className="h-3 bg-slate-100 dark:bg-slate-800 rounded w-1/3"></div>
+            </div>
+            <div className="h-6 bg-slate-200 dark:bg-slate-700/80 rounded-full w-20"></div>
+            <div className="h-6 bg-slate-200 dark:bg-slate-700/80 rounded-md w-28"></div>
+            <div className="h-6 bg-slate-200 dark:bg-slate-700/80 rounded-full w-16"></div>
+            <div className="flex items-center space-x-2">
+              <div className="h-8 bg-slate-200 dark:bg-slate-700/80 rounded-md w-14"></div>
+              <div className="h-8 bg-slate-200 dark:bg-slate-700/80 rounded-md w-14"></div>
+              <div className="h-8 bg-slate-200 dark:bg-slate-700/80 rounded-md w-16"></div>
+              <div className="h-8 bg-slate-200 dark:bg-slate-700/80 rounded-md w-16"></div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
   );
-}
+};
 
 export default function AdminManagement({ darkMode }) {
   useDocumentTitle('Manage Admins – AlertU');
 
+  const { logMovement } = useAuditLog();
+
   const [admins, setAdmins] = useState([]);
   const [loading, setLoading] = useState(true);
-
-  const [viewMode, setViewMode] = useState('active');
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [actionLoadingId, setActionLoadingId] = useState(null);
 
   const [searchTerm, setSearchTerm] = useState('');
-  const [sorting, setSorting] = useState([]);
-  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 10 });
+  const [activeTab, setActiveTab] = useState('active'); // 'active' | 'archived'
+  const [statusFilter, setStatusFilter] = useState('ALL');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 5;
 
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingAdmin, setEditingAdmin] = useState(null);
-  const [showPassword, setShowPassword] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  
-  // File holding state for delayed upload
-  const [selectedAvatarFile, setSelectedAvatarFile] = useState(null);
-  const [avatarPreview, setAvatarPreview] = useState('');
+  // Real-time online presences map (uid/adminId -> boolean)
+  const [onlinePresences, setOnlinePresences] = useState({});
 
-  const [isArchiveModalOpen, setIsArchiveModalOpen] = useState(false);
-  const [adminToArchive, setAdminToArchive] = useState(null);
-  const [isArchiving, setIsArchiving] = useState(false);
-
-  const [restoringId, setRestoringId] = useState(null);
-
-  const [formData, setFormData] = useState({
-    name: '', email: '', password: '', avatar: ''
+  // Modals state
+  const [selectedAdmin, setSelectedAdmin] = useState(null);
+  const [modals, setModals] = useState({
+    create: false,
+    view: false,
+    edit: false,
+    archive: false,
   });
-  const [phone, setPhone] = useState('');
 
-  useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, 'admins'), (snapshot) => {
-      const adminList = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
+  const [toggleDialog, setToggleDialog] = useState({
+    isOpen: false,
+    admin: null,
+  });
+
+  // Fast, explicit refresh from Firestore
+  const handleRefresh = useCallback(async (silent = false) => {
+    if (!silent) setIsRefreshing(true);
+    try {
+      const snap = await getDocs(collection(db, 'admins'));
+      const adminList = snap.docs.map((docSnap) => ({
+        id: docSnap.id,
+        ...docSnap.data(),
       }));
       setAdmins(adminList);
+      if (!silent) {
+        toast.success('Admin directory up to date.', { id: 'refresh-admins', duration: 1500 });
+      }
+    } catch (error) {
+      console.error('Error refreshing administrators from Firestore:', error);
+      if (!silent) {
+        toast.error('Failed to refresh administrator records.');
+      }
+    } finally {
+      setIsRefreshing(false);
       setLoading(false);
-    }, (error) => {
-      console.error("Error fetching administrators: ", error);
-      toast.error("Failed to sync core registry data.");
-      setLoading(false);
-    });
+    }
+  }, []);
+
+  // 1. Sync administrators live from Firestore
+  useEffect(() => {
+    const unsubscribe = onSnapshot(
+      collection(db, 'admins'),
+      (snapshot) => {
+        const adminList = snapshot.docs.map((docSnap) => ({
+          id: docSnap.id,
+          ...docSnap.data(),
+        }));
+        setAdmins(adminList);
+        setLoading(false);
+      },
+      (error) => {
+        console.error('Error fetching administrators from Firestore:', error);
+        toast.error('Failed to sync administrator records.');
+        setLoading(false);
+      }
+    );
 
     return () => unsubscribe();
   }, []);
 
-  // Audit logging hook
-  const { logRegisterAdmin, logEditAdmin, logArchiveAdmin, logRestoreAdmin } = useAuditLog();
+  // 2. Real-time Socket.IO Presence Listener
+  useEffect(() => {
+    if (!socket) return;
 
-  const getInitials = (name) => {
-    if (!name) return '?';
-    return name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
-  };
+    const handleConnect = () => {
+      joinSocketRoom('admins');
+      joinSocketRoom('super_admins');
+    };
 
-  const openCreateModal = () => {
-    setEditingAdmin(null);
-    setFormData({ name: '', email: '', password: '', avatar: '' });
-    setPhone('');
-    setSelectedAvatarFile(null);
-    setAvatarPreview('');
-    setShowPassword(false);
-    setIsModalOpen(true);
-  };
-
-  const openEditModal = (admin) => {
-    setEditingAdmin(admin);
-    setFormData({
-      name: admin.name || '',
-      email: admin.email || '',
-      avatar: admin.avatar || '',
-      password: '••••••••',
-    });
-    // Format existing phone numbers for proper validation
-    setPhone(formatToE164Phone(admin.phone || ''));
-    setSelectedAvatarFile(null);
-    setAvatarPreview(admin.avatar || '');
-    setShowPassword(false);
-    setIsModalOpen(true);
-  };
-
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-  };
-
-  // Set file locally for preview without uploading immediately
-  const handleFileSelection = (file) => {
-    if (!file) return;
-
-    if (!file.type.startsWith('image/')) {
-      toast.error("Please select a valid image file.");
-      return;
+    if (socket.connected) {
+      joinSocketRoom('admins');
+      joinSocketRoom('super_admins');
     }
 
-    setSelectedAvatarFile(file);
-    setAvatarPreview(URL.createObjectURL(file));
-  };
+    socket.on('connect', handleConnect);
 
-  const handleAvatarUpload = (e) => {
-    const file = e.target.files[0];
-    if (file) handleFileSelection(file);
-  };
+    const handlePresenceEvent = (data) => {
+      if (!data) return;
+      const targetId = String(data.uid || data.adminId || data.authUid || data.id || '');
+      const isOnline = typeof data.isActive === 'boolean' 
+        ? data.isActive 
+        : data.isOnline === true || data.status === 'Online';
 
-  const handleAvatarDrop = (e) => {
-    e.preventDefault();
-    const file = e.dataTransfer.files[0];
-    if (file) handleFileSelection(file);
-  };
+      if (targetId) {
+        setOnlinePresences((prev) => ({
+          ...prev,
+          [targetId]: isOnline,
+        }));
+      }
+    };
 
-  // Option B: Proxy upload avatar file via server multipart endpoint
-  const uploadAvatarToB2 = async (file) => {
-    const toastId = toast.loading("Uploading avatar to storage...");
+    socket.on('admin_presence_changed', handlePresenceEvent);
+    socket.on('citizen_presence_changed', handlePresenceEvent);
+    socket.on('user_online', (d) => handlePresenceEvent({ ...d, isActive: true }));
+    socket.on('user_offline', (d) => handlePresenceEvent({ ...d, isActive: false }));
 
-    try {
-      const targetUid = editingAdmin?.uid || editingAdmin?.id || 'new_admin';
+    return () => {
+      socket.off('connect', handleConnect);
+      socket.off('admin_presence_changed', handlePresenceEvent);
+      socket.off('citizen_presence_changed', handlePresenceEvent);
+      socket.off('user_online');
+      socket.off('user_offline');
+    };
+  }, []);
 
-      const formDataUpload = new FormData();
-      formDataUpload.append('file', file);
-      formDataUpload.append('uid', targetUid);
+  const openModal = (type, admin = null) => {
+    setSelectedAdmin(admin);
+    setModals((prev) => ({ ...prev, [type]: true }));
 
-      const data = await fetchFromBackend('admin/upload-avatar', {
-        method: 'POST',
-        body: formDataUpload,
+    if (type === 'view' && admin) {
+      logMovement({
+        action: 'VIEW_ADMIN_PROFILE',
+        target: admin.adminId || admin.email || admin.id,
+        details: `Super Admin viewed administrator profile for ${admin.name || admin.email}`,
       });
-
-      if (!data.success && !data.fileUrl) {
-        throw new Error(data.error || data.message || 'Avatar upload failed');
-      }
-
-      toast.success("Avatar uploaded successfully!", { id: toastId });
-      return data.fileUrl;
-    } catch (error) {
-      console.error("Avatar Upload Error:", error);
-      toast.error(error.message || "Failed to upload avatar.", { id: toastId });
-      throw error;
     }
   };
 
-  // --- Live validation ---
-  const nameValid = formData.name.trim().length > 0;
-  const emailValid = EMAIL_REGEX.test(formData.email.trim());
-  const phoneValid = !!phone && isValidPhoneNumber(phone);
+  const closeModal = (type) => {
+    setModals((prev) => ({ ...prev, [type]: false }));
+    if (type !== 'create') setSelectedAdmin(null);
+  };
 
-  const passwordRequirementResults = useMemo(
-    () => PASSWORD_REQUIREMENTS.map((req) => ({ ...req, met: req.test(formData.password) })),
-    [formData.password]
-  );
-  const passwordValid = editingAdmin ? true : passwordRequirementResults.every((r) => r.met);
-  const strength = getPasswordStrength(formData.password);
+  // Status toggle handler
+  const triggerStatusConfirm = (admin) => {
+    setToggleDialog({ isOpen: true, admin });
+  };
 
-  const isFormValid = nameValid && emailValid && phoneValid && passwordValid;
+  const confirmToggleStatus = async () => {
+    const admin = toggleDialog.admin;
+    if (!admin) return;
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-
-    if (!isFormValid) {
-      if (!nameValid) toast.error('Full Name is required.');
-      else if (!emailValid) toast.error('Enter a valid email address.');
-      else if (!phoneValid) toast.error('Enter a valid phone number.');
-      else if (!passwordValid) toast.error('Password does not meet all requirements.');
-      return;
-    }
-
-    setIsSaving(true);
+    const adminId = admin.id;
+    const currentlyActive = checkIsAccountEnabled(admin);
+    const nextIsDisabled = currentlyActive;
+    const nextStatus = currentlyActive ? 'Disabled' : 'Active';
 
     try {
-      // Step A: Perform file upload via server proxy FIRST if a new file was selected
-      let finalAvatarUrl = formData.avatar;
-      if (selectedAvatarFile) {
-        finalAvatarUrl = await uploadAvatarToB2(selectedAvatarFile);
-      }
+      setActionLoadingId(adminId);
 
-      // Step B: Save changes / Create account with resolved avatar URL
-      const fullPhone = phone;
-
-      if (editingAdmin) {
-        // 1. Update Firestore Database
-        const adminRef = doc(db, 'admins', editingAdmin.id);
-        const updatedData = {
-          name: formData.name || '',
-          phone: fullPhone,
-          email: formData.email || '',
-          avatar: finalAvatarUrl || '',
-          updatedAt: serverTimestamp(),
-        };
-        await updateDoc(adminRef, updatedData);
-
-        // 2. Sync changes over to Firebase Auth & Firestore backend update
-        if (editingAdmin.uid) {
-          await fetchFromBackend('admin/update-admin-auth', {
-            method: 'POST',
-            body: JSON.stringify({
-              uid: editingAdmin.uid,
-              email: formData.email,
-              name: formData.name,
-              phone: fullPhone,
-              avatar: finalAvatarUrl,
-            }),
-          });
-        }
-
-        await logEditAdmin({ ...editingAdmin, ...updatedData }, updatedData);
-        toast.success('Account updated successfully!');
-      } else {
-        // Create account on backend (enforces Document ID === Auth UID)
-        await fetchFromBackend('admin/create-admin', {
+      // 1. Synchronize with backend to disable at Firebase Auth level & notify active session
+      try {
+        await fetchFromBackend('admin/toggle-status', {
           method: 'POST',
           body: JSON.stringify({
-            email: formData.email,
-            password: formData.password,
-            name: formData.name,
-            phone: fullPhone,
-            avatar: finalAvatarUrl,
+            uid: admin.uid || adminId,
+            isDisabled: nextIsDisabled,
+            status: nextStatus,
           }),
         });
-
-        await logRegisterAdmin({
-          name: formData.name,
-          email: formData.email,
-          phone: fullPhone,
-        });
-        toast.success('Account created successfully!');
+      } catch (backendErr) {
+        console.warn('Backend toggle status warning (fallback to Firestore):', backendErr.message);
       }
-      setIsModalOpen(false);
-    } catch (error) {
-      console.error(error);
-      toast.error(error.message || 'An error occurred while saving.');
-    } finally {
-      setIsSaving(false);
-    }
-  };
 
-  const initiateArchive = (admin) => {
-    setAdminToArchive(admin);
-    setIsArchiveModalOpen(true);
-  };
-
-  const confirmArchive = async () => {
-    if (!adminToArchive) return;
-    setIsArchiving(true);
-    try {
-      await updateDoc(doc(db, 'admins', adminToArchive.id), {
-        archived: true,
-        archivedAt: serverTimestamp(),
-        archivedBy: auth.currentUser?.email || 'Unknown',
+      // 2. Direct Firestore update for immediate local reflection
+      const adminRef = doc(db, 'admins', adminId);
+      await updateDoc(adminRef, {
+        isDisabled: nextIsDisabled,
+        status: nextStatus,
         updatedAt: serverTimestamp(),
       });
-      await logArchiveAdmin(adminToArchive);
-      toast.success('Account archived successfully.');
-    } catch (error) {
-      console.error('Archive Flow Error:', error);
-      toast.error(error.message || 'Failed to archive account.');
-    } finally {
-      setIsArchiving(false);
-      setIsArchiveModalOpen(false);
-      setAdminToArchive(null);
-    }
-  };
 
-  const restoreAdmin = async (admin) => {
-    setRestoringId(admin.id);
-    try {
-      await updateDoc(doc(db, 'admins', admin.id), {
-        archived: false,
-        archivedAt: null,
-        archivedBy: null,
-        updatedAt: serverTimestamp(),
+      await logMovement({
+        action: nextIsDisabled ? 'DISABLE_ADMIN_ACCOUNT' : 'ENABLE_ADMIN_ACCOUNT',
+        target: admin.adminId || admin.email || adminId,
+        details: `${nextIsDisabled ? 'Disabled' : 'Reactivated'} access for administrator ${admin.name || admin.email}`,
       });
-      await logRestoreAdmin(admin);
-      toast.success('Account restored successfully.');
-    } catch (error) {
-      console.error('Restore Flow Error:', error);
-      toast.error(error.message || 'Failed to restore account.');
+
+      toast.success(`Administrator account ${nextIsDisabled ? 'disabled' : 'enabled'} successfully.`);
+      setToggleDialog({ isOpen: false, admin: null });
+    } catch (err) {
+      console.error('Failed to toggle admin status:', err);
+      toast.error('Failed to update account status.');
     } finally {
-      setRestoringId(null);
+      setActionLoadingId(null);
     }
   };
 
-  const viewAdmins = useMemo(
-    () => admins.filter(admin => (viewMode === 'archived' ? admin.archived === true : !admin.archived)),
-    [admins, viewMode]
-  );
+  // Safe Search & Multi-Filter Logic
+  const filteredAdmins = useMemo(() => {
+    return admins.filter((admin) => {
+      const matchesTab = activeTab === 'archived' ? admin.archived === true : !admin.archived;
+      if (!matchesTab) return false;
 
-  const rowHover = darkMode ? "hover:bg-slate-800/40" : "hover:bg-slate-50/90";
-  const textPrimary = darkMode ? "text-white" : "text-slate-900";
-  const textSecondary = darkMode ? "text-slate-400" : "text-slate-500";
-  const borderSeparator = darkMode ? "border-slate-800" : "border-slate-200/60";
-  const inputStyling = darkMode ? "bg-slate-900 border-slate-800 text-white focus:border-blue-500 focus:ring-blue-500/20" : "bg-white border-slate-200 text-slate-900 focus:border-blue-600 focus:ring-blue-600/10";
-  const errorText = "text-xs text-red-500 mt-1";
-
-  const columns = useMemo(() => [
-    {
-      id: 'admin',
-      accessorFn: (admin) => admin.name || '',
-      sortingFn: caseInsensitiveSort,
-      header: ({ column }) => <SortableHeader column={column}>Admin Details</SortableHeader>,
-      cell: ({ row }) => {
-        const admin = row.original;
-        return (
-          <div className="flex items-center gap-3.5">
-            <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0 shadow-inner overflow-hidden ${admin.avatarBg || 'bg-slate-500'}`}>
-              {admin.avatar ? (
-                <img src={admin.avatar} alt="" className="w-full h-full object-cover rounded-full" />
-              ) : (
-                getInitials(admin.name)
-              )}
-            </div>
-            <div>
-              <span className={`font-semibold text-base block ${textPrimary}`}>{admin.name}</span>
-              <div className={`text-sm mt-0.5 ${textSecondary}`}>{admin.email}</div>
-            </div>
-          </div>
-        );
-      },
-    },
-    {
-      id: 'adminId',
-      accessorFn: (admin) => admin.adminId || '',
-      sortingFn: caseInsensitiveSort,
-      header: ({ column }) => <SortableHeader column={column}>Admin ID</SortableHeader>,
-      cell: ({ row }) => {
-        const adminId = row.original.adminId;
-        if (!adminId) {
-          return <span className={`text-xs ${textSecondary}`}>—</span>;
-        }
-        return (
-          <span className={`inline-block text-[11px] font-mono font-semibold px-2 py-1 rounded-md border ${
-            darkMode ? 'border-slate-700 text-slate-300 bg-slate-800/60' : 'border-slate-200 text-slate-600 bg-slate-50'
-          }`}>
-            {adminId}
-          </span>
-        );
-      },
-    },
-    {
-      id: 'contact',
-      accessorFn: (admin) => admin.phone || '',
-      sortingFn: caseInsensitiveSort,
-      header: ({ column }) => <SortableHeader column={column}>Contact</SortableHeader>,
-      cell: ({ row }) => {
-        const admin = row.original;
-        return (
-          <div className={`font-semibold ${darkMode ? 'text-slate-300' : 'text-slate-700'}`}>{admin.phone}</div>
-        );
-      },
-    },
-    {
-      id: 'actions',
-      header: () => <div className="text-right uppercase tracking-wider text-xs font-semibold">Actions</div>,
-      enableSorting: false,
-      cell: ({ row }) => {
-        const admin = row.original;
-        return (
-          <div className="inline-flex gap-1 justify-end w-full">
-            {viewMode === 'active' ? (
-              <>
-                <button onClick={() => openEditModal(admin)} className={`p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-blue-500 transition-colors ${textSecondary}`} title="Edit">
-                  <Edit2 className="w-4 h-4" />
-                </button>
-                <button onClick={() => initiateArchive(admin)} className={`p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-amber-500 transition-colors ${textSecondary}`} title="Archive">
-                  <Archive className="w-4 h-4" />
-                </button>
-              </>
-            ) : (
-              restoringId === admin.id ? (
-                <Badge variant="success">
-                  <Spinner /> Restoring
-                </Badge>
-              ) : (
-                <button onClick={() => restoreAdmin(admin)} className={`p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-emerald-500 transition-colors ${textSecondary}`} title="Restore">
-                  <ArchiveRestore className="w-4 h-4" />
-                </button>
-              )
-            )}
-          </div>
-        );
-      },
-    },
-  ], [viewMode, restoringId, darkMode]);
-
-  const table = useReactTable({
-    data: viewAdmins,
-    columns,
-    state: {
-      sorting,
-      globalFilter: searchTerm,
-      pagination,
-    },
-    onSortingChange: setSorting,
-    onGlobalFilterChange: setSearchTerm,
-    onPaginationChange: setPagination,
-    globalFilterFn: (row, _columnId, filterValue) => {
-      const admin = row.original;
-      const term = filterValue.toLowerCase();
-      return (
-        (admin.name?.toLowerCase() || '').includes(term) ||
-        (admin.adminId?.toLowerCase() || '').includes(term) ||
-        (admin.email?.toLowerCase() || '').includes(term)
+      const isAccountEnabled = checkIsAccountEnabled(admin);
+      const isOnline = Boolean(
+        onlinePresences[admin.id] ?? 
+        onlinePresences[admin.uid] ?? 
+        onlinePresences[admin.adminId] ?? 
+        admin.isActive ?? 
+        admin.isOnline
       );
-    },
-    getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
-  });
 
-  const rows = table.getRowModel().rows;
+      if (statusFilter === 'Active' && !isAccountEnabled) return false;
+      if (statusFilter === 'Disabled' && isAccountEnabled) return false;
+      if (statusFilter === 'Online' && !isOnline) return false;
+      if (statusFilter === 'Offline' && isOnline) return false;
+
+      const term = searchTerm.trim().toLowerCase();
+      if (!term) return true;
+
+      return (
+        admin.name?.toLowerCase().includes(term) ||
+        admin.email?.toLowerCase().includes(term) ||
+        admin.adminId?.toLowerCase().includes(term) ||
+        admin.phone?.toLowerCase().includes(term)
+      );
+    });
+  }, [admins, activeTab, statusFilter, searchTerm, onlinePresences]);
+
+  // Reset page when search, tab, or filter updates
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, activeTab, statusFilter]);
+
+  const totalPages = Math.ceil(filteredAdmins.length / itemsPerPage) || 1;
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [totalPages, currentPage]);
+
+  const paginatedAdmins = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return filteredAdmins.slice(start, start + itemsPerPage);
+  }, [filteredAdmins, currentPage, itemsPerPage]);
+
+  const activeCount = admins.filter((a) => !a.archived).length;
+  const archivedCount = admins.filter((a) => a.archived).length;
+
+  const filterOptions = [
+    { label: 'All', value: 'ALL' },
+    { label: 'Online', value: 'Online' },
+    { label: 'Offline', value: 'Offline' },
+    { label: 'Active', value: 'Active' },
+    { label: 'Disabled', value: 'Disabled' },
+  ];
 
   return (
-    <div className={`w-full text-sm transition-all ${darkMode ? "text-slate-100" : "text-slate-800"}`}>
-      
+    <div className="w-full font-sans text-slate-900 dark:text-slate-100 transition-colors duration-200">
       <Toaster 
-        position="top-right"
+        position="top-right" 
         toastOptions={{
-          style: darkMode ? { background: '#0f172a', color: '#fff', border: '1px solid #1e293b' } : { background: '#fff', color: '#0f172a', border: '1px solid #e2e8f0' }
+          style: darkMode 
+            ? { background: '#0f172a', color: '#fff', border: '1px solid #1e293b' } 
+            : { background: '#fff', color: '#0f172a', border: '1px solid #e2e8f0' }
         }}
       />
 
-      {/* Toolbar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4 pb-5 border-b border-slate-200 dark:border-slate-800">
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-          <div className="relative min-w-none sm:min-w-[320px]">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input 
-              type="text" 
-              placeholder="Search by name or email..." 
-              value={searchTerm}
-              onChange={(e) => { setSearchTerm(e.target.value); setPagination(p => ({ ...p, pageIndex: 0 })); }}
-              className={`w-full pl-10 pr-4 py-2 text-sm rounded-xl border focus:outline-hidden focus:ring-4 transition-all ${inputStyling}`}
-            />
-          </div>
-          
-          <button 
-            onClick={openCreateModal}
-            className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold rounded-xl transition-colors cursor-pointer shrink-0"
+      {/* Header matching AlertU-Admin Citizen Directory */}
+      <header className="mb-6 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">Admin Directory</h1>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+            Manage registered administrator accounts, monitor online presence, and adjust profile parameters.
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => openModal('create')}
+            className="inline-flex items-center justify-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow hover:bg-blue-700 focus:outline-none transition-colors cursor-pointer"
           >
-            <Plus className="w-4 h-4" />
-            <span>Add Administrator</span>
+            <UserPlus className="h-4 w-4" />
+            Register Admin
+          </button>
+          <button
+            onClick={() => handleRefresh(false)}
+            disabled={isRefreshing}
+            className="inline-flex items-center justify-center gap-2 rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer disabled:opacity-60"
+          >
+            <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin text-blue-600' : ''}`} />
+            {isRefreshing ? 'Refreshing...' : 'Refresh Data'}
           </button>
         </div>
-      </div>
+      </header>
 
-      {/* Active / Archived toggle */}
-      <div className="flex gap-2 mb-6">
-        <button
-          onClick={() => { setViewMode('active'); setPagination(p => ({ ...p, pageIndex: 0 })); }}
-          className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition-colors cursor-pointer ${
-            viewMode === 'active'
-              ? 'bg-blue-600 text-white'
-              : darkMode ? 'text-slate-400 hover:bg-slate-800' : 'text-slate-500 hover:bg-slate-100'
-          }`}
-        >
-          Active
-        </button>
-        <button
-          onClick={() => { setViewMode('archived'); setPagination(p => ({ ...p, pageIndex: 0 })); }}
-          className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition-colors cursor-pointer ${
-            viewMode === 'archived'
-              ? 'bg-blue-600 text-white'
-              : darkMode ? 'text-slate-400 hover:bg-slate-800' : 'text-slate-500 hover:bg-slate-100'
-          }`}
-        >
-          Archived
-        </button>
-      </div>
-
-      {/* Data Table */}
-      {loading ? (
-        <div className="text-center py-24">
-          <p className={`text-base ${textSecondary}`}>Synchronizing data with registry core...</p>
+      {/* Main Card Wrapper */}
+      <div className="w-full rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900 overflow-hidden">
+        
+        {/* Navigation Tabs */}
+        <div className="flex border-b border-slate-200 bg-slate-50/50 dark:border-slate-800 dark:bg-slate-900/50 px-6">
+          <button
+            onClick={() => setActiveTab('active')}
+            className={`inline-flex items-center gap-2 border-b-2 px-4 py-3.5 text-sm font-medium transition-colors cursor-pointer ${
+              activeTab === 'active'
+                ? 'border-blue-600 bg-white text-blue-600 dark:bg-slate-900 dark:text-blue-400'
+                : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+            }`}
+          >
+            <Users className="h-4 w-4" />
+            Active Accounts
+            <span className="ml-1 rounded-full bg-slate-200/80 dark:bg-slate-800 px-2 py-0.5 text-xs font-semibold text-slate-700 dark:text-slate-300">
+              {activeCount}
+            </span>
+          </button>
+          <button
+            onClick={() => setActiveTab('archived')}
+            className={`inline-flex items-center gap-2 border-b-2 px-4 py-3.5 text-sm font-medium transition-colors cursor-pointer ${
+              activeTab === 'archived'
+                ? 'border-blue-600 bg-white text-blue-600 dark:bg-slate-900 dark:text-blue-400'
+                : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+            }`}
+          >
+            <Archive className="h-4 w-4" />
+            Archived Vault
+            <span className="ml-1 rounded-full bg-slate-200/80 dark:bg-slate-800 px-2 py-0.5 text-xs font-semibold text-slate-700 dark:text-slate-300">
+              {archivedCount}
+            </span>
+          </button>
         </div>
-      ) : (
-        <div className={`w-full overflow-hidden rounded-xl border ${borderSeparator}`}>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse min-w-[700px]">
+
+        {/* Toolbar Controls */}
+        <div className="flex flex-col gap-4 border-b border-slate-200 dark:border-slate-800 p-6 sm:flex-row sm:items-center sm:justify-between">
+          <div className="relative flex-1 max-w-lg">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
+            <input
+              type="text"
+              aria-label="Search administrators"
+              placeholder="Search by Admin ID, full name, email, or phone..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full rounded-md border border-slate-300 bg-white dark:border-slate-700 dark:bg-slate-800 dark:text-white pl-9 pr-4 py-2 text-sm placeholder-slate-400 dark:placeholder-slate-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
+          </div>
+
+          {/* Button Group / Segmented Control Filter */}
+          {activeTab === 'active' && (
+            <div className="inline-flex items-center p-1 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80">
+              {filterOptions.map((opt) => {
+                const isSelected = statusFilter === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setStatusFilter(opt.value)}
+                    className={`relative px-3 py-1.5 text-xs font-medium rounded-md transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 cursor-pointer ${
+                      isSelected
+                        ? 'text-slate-900 dark:text-white font-semibold'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                    }`}
+                  >
+                    {isSelected && (
+                      <motion.div
+                        layoutId="activeAdminFilterPill"
+                        className="absolute inset-0 bg-white dark:bg-slate-900 rounded-md shadow-sm border border-slate-200/60 dark:border-slate-700/60"
+                        transition={{ type: 'spring', stiffness: 500, damping: 35 }}
+                      />
+                    )}
+                    <span className="relative z-10">{opt.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Table Content Switcher */}
+        {activeTab === 'archived' ? (
+          <ArchivedAdminsTable
+            admins={admins}
+            loading={loading}
+            searchTerm={searchTerm}
+            onViewAdmin={(admin) => openModal('view', admin)}
+            onRefresh={() => handleRefresh(true)}
+          />
+        ) : loading ? (
+          <TableSkeleton />
+        ) : (
+          <div className="w-full overflow-x-auto">
+            <table className="w-full text-left border-collapse text-sm">
               <thead>
-                {table.getHeaderGroups().map((headerGroup) => (
-                  <tr key={headerGroup.id} className={`border-b font-semibold ${textSecondary} ${borderSeparator}`}>
-                    {headerGroup.headers.map((header, i) => (
-                      <th
-                        key={header.id}
-                        className={`py-3 ${i === 0 ? 'px-4' : 'px-2'} ${header.id === 'actions' ? 'pr-4 text-right' : ''}`}
-                      >
-                        {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
-                      </th>
-                    ))}
-                  </tr>
-                ))}
+                <tr className="border-b border-slate-200 bg-slate-50/50 dark:border-slate-800 dark:bg-slate-800/50 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  <th className="px-6 py-4">Admin ID</th>
+                  <th className="px-6 py-4">Administrator</th>
+                  <th className="px-6 py-4">Presence</th>
+                  <th className="px-6 py-4">Phone Number</th>
+                  <th className="px-6 py-4">Status</th>
+                  <th className="px-6 py-4 text-right">Actions</th>
+                </tr>
               </thead>
-              <tbody className={`divide-y ${borderSeparator}`}>
-                {rows.length ? (
-                  rows.map((row) => (
-                    <tr key={row.id} className={`transition-all ${rowHover}`}>
-                      {row.getVisibleCells().map((cell, i) => (
-                        <td key={cell.id} className={`py-4 align-middle ${i === 0 ? 'px-4' : 'px-2'} ${cell.column.id === 'actions' ? 'pr-4' : ''}`}>
-                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                        </td>
-                      ))}
-                    </tr>
-                  ))
-                ) : (
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {paginatedAdmins.length === 0 ? (
                   <tr>
-                    <td colSpan={columns.length} className="py-24 text-center">
-                      <span className={textSecondary}>
-                        {searchTerm
-                          ? 'No administrators match your search.'
-                          : viewMode === 'archived' ? 'No archived administrator records.' : 'No responsive administrator records found.'}
-                      </span>
+                    <td colSpan={6} className="py-12 text-center text-slate-500 dark:text-slate-400">
+                      <Users className="mx-auto h-8 w-8 text-slate-400 dark:text-slate-600 mb-2" />
+                      No administrator records match your selected criteria.
                     </td>
                   </tr>
+                ) : (
+                  paginatedAdmins.map((admin) => {
+                    const isAccountEnabled = checkIsAccountEnabled(admin);
+                    const isActionBusy = actionLoadingId === admin.id;
+                    const isOnline = Boolean(
+                      onlinePresences[admin.id] ?? 
+                      onlinePresences[admin.uid] ?? 
+                      onlinePresences[admin.adminId] ?? 
+                      admin.isActive ?? 
+                      admin.isOnline
+                    );
+
+                    return (
+                      <tr key={admin.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors">
+                        {/* Admin ID */}
+                        <td className="px-6 py-4">
+                          <span className="inline-block rounded-md bg-slate-100 dark:bg-slate-800 px-2.5 py-1 text-sm font-mono font-bold tracking-wide text-slate-800 dark:text-slate-100 border border-slate-200/80 dark:border-slate-700/80">
+                            {admin.adminId || 'ID Pending'}
+                          </span>
+                        </td>
+
+                        {/* Full Name & Avatar */}
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-3.5">
+                            <div className={`w-9 h-9 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0 overflow-hidden ${admin.avatarBg || 'bg-slate-500'}`}>
+                              {admin.avatar ? (
+                                <img src={admin.avatar} alt="" className="w-full h-full object-cover" />
+                              ) : (
+                                getInitials(admin.name)
+                              )}
+                            </div>
+                            <div>
+                              <div className="font-semibold text-slate-900 dark:text-slate-100">{admin.name || 'Unnamed Record'}</div>
+                              <div className="text-xs text-slate-500 dark:text-slate-400">{admin.email}</div>
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Live Presence Indicator */}
+                        <td className="px-6 py-4">
+                          <PresenceBadge isActive={isOnline} />
+                        </td>
+
+                        {/* Phone Number */}
+                        <td className="px-6 py-4 text-xs font-medium text-slate-600 dark:text-slate-300">
+                          {admin.phone || '—'}
+                        </td>
+
+                        {/* Status Badge */}
+                        <td className="px-6 py-4">
+                          {isAccountEnabled ? (
+                            <span className="inline-flex items-center gap-1 rounded-full border border-green-200 bg-green-50 dark:border-green-900/50 dark:bg-green-950/40 dark:text-green-400 px-2.5 py-0.5 text-xs font-semibold text-green-700">
+                              <ShieldCheck className="h-3 w-3" />
+                              Active
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 rounded-full border border-red-200 bg-red-50 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-400 px-2.5 py-0.5 text-xs font-semibold text-red-700">
+                              <ShieldAlert className="h-3 w-3" />
+                              Disabled
+                            </span>
+                          )}
+                        </td>
+
+                        {/* Actions */}
+                        <td className="px-6 py-4 text-right">
+                          <div className="inline-flex items-center justify-end gap-2">
+                            {/* View Button */}
+                            <button
+                              onClick={() => openModal('view', admin)}
+                              className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 px-2.5 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 transition-colors cursor-pointer"
+                            >
+                              <Eye className="h-3.5 w-3.5" /> View
+                            </button>
+
+                            {/* Edit Button */}
+                            <button
+                              onClick={() => openModal('edit', admin)}
+                              className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 px-2.5 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 transition-colors cursor-pointer"
+                            >
+                              <Edit3 className="h-3.5 w-3.5" /> Edit
+                            </button>
+
+                            {/* Enable/Disable Toggle */}
+                            <button
+                              onClick={() => triggerStatusConfirm(admin)}
+                              disabled={isActionBusy}
+                              className={`inline-flex items-center gap-1 w-[82px] justify-center rounded-md border px-2.5 py-1.5 text-xs font-medium shadow-sm transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer ${
+                                isAccountEnabled
+                                  ? 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-400 dark:hover:bg-amber-900/60'
+                                  : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-400 dark:hover:bg-emerald-900/60'
+                              }`}
+                            >
+                              {isActionBusy ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : isAccountEnabled ? (
+                                <>
+                                  <UserX className="h-3.5 w-3.5" /> Disable
+                                </>
+                              ) : (
+                                <>
+                                  <UserCheck className="h-3.5 w-3.5" /> Enable
+                                </>
+                              )}
+                            </button>
+
+                            {/* Archive Button */}
+                            <button
+                              onClick={() => openModal('archive', admin)}
+                              className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-red-50 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-400 dark:hover:bg-red-900/60 px-2.5 py-1.5 text-xs font-medium text-red-700 shadow-sm hover:bg-red-100 transition-colors cursor-pointer"
+                            >
+                              <FolderArchive className="h-3.5 w-3.5" /> Archive
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
           </div>
+        )}
 
-          {/* Pagination controls */}
-          {rows.length > 0 && (
-            <div className={`flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t ${borderSeparator}`}>
-              <div className={`text-xs ${textSecondary}`}>
-                Showing {table.getState().pagination.pageIndex * table.getState().pagination.pageSize + 1}
-                {'–'}
-                {Math.min((table.getState().pagination.pageIndex + 1) * table.getState().pagination.pageSize, table.getFilteredRowModel().rows.length)}
-                {' of '}{table.getFilteredRowModel().rows.length}
-              </div>
-
-              <div className="flex items-center gap-4">
-                <div className="flex items-center gap-2">
-                  <span className={`text-xs font-medium ${textSecondary}`}>Rows per page</span>
-                  <select
-                    value={table.getState().pagination.pageSize}
-                    onChange={(e) => table.setPageSize(Number(e.target.value))}
-                    className={`text-xs rounded-lg border px-2 py-1 outline-none ${inputStyling}`}
-                  >
-                    {[10, 20, 50].map((size) => (
-                      <option key={size} value={size}>{size}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className={`text-xs font-medium ${textSecondary}`}>
-                  Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount() || 1}
-                </div>
-
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => table.setPageIndex(0)}
-                    disabled={!table.getCanPreviousPage()}
-                    className={`p-1.5 rounded-lg border disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer ${borderSeparator}`}
-                  >
-                    <ChevronsLeft className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => table.previousPage()}
-                    disabled={!table.getCanPreviousPage()}
-                    className={`p-1.5 rounded-lg border disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer ${borderSeparator}`}
-                  >
-                    <ChevronLeft className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => table.nextPage()}
-                    disabled={!table.getCanNextPage()}
-                    className={`p-1.5 rounded-lg border disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer ${borderSeparator}`}
-                  >
-                    <ChevronRight className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => table.setPageIndex(table.getPageCount() - 1)}
-                    disabled={!table.getCanNextPage()}
-                    className={`p-1.5 rounded-lg border disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer ${borderSeparator}`}
-                  >
-                    <ChevronsRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Creation / Edit Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-          <div className={`w-full max-w-md max-h-[85vh] rounded-2xl border shadow-xl flex flex-col overflow-hidden transition-all ${darkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-800'}`}>
-            <div className={`flex justify-between items-center px-6 py-4 border-b shrink-0 ${borderSeparator}`}>
-              <div>
-                <h2 className="text-lg font-semibold">{editingAdmin ? 'Update Admin Profile' : 'Create Admin Account'}</h2>
-                {editingAdmin?.adminId && (
-                  <span className={`text-xs font-mono ${textSecondary}`}>{editingAdmin.adminId}</span>
-                )}
-                {!editingAdmin && (
-                  <p className={`text-xs mt-0.5 ${textSecondary}`}>A unique admin ID is assigned automatically on save.</p>
-                )}
-              </div>
-              <button onClick={() => setIsModalOpen(false)} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800">
-                <X className="w-5 h-5" />
-              </button>
+        {/* Pagination Controls for Active Tab */}
+        {activeTab === 'active' && !loading && filteredAdmins.length > 0 && (
+          <div className="flex flex-col sm:flex-row items-center justify-between border-t border-slate-200 bg-slate-50/50 dark:border-slate-800 dark:bg-slate-900/50 px-6 py-4 gap-3">
+            <div className="text-xs text-slate-500 dark:text-slate-400">
+              Showing <span className="font-semibold text-slate-700 dark:text-slate-200">{(currentPage - 1) * itemsPerPage + 1}</span> to{' '}
+              <span className="font-semibold text-slate-700 dark:text-slate-200">{Math.min(currentPage * itemsPerPage, filteredAdmins.length)}</span> of{' '}
+              <span className="font-semibold text-slate-700 dark:text-slate-200">{filteredAdmins.length}</span> records
             </div>
 
-            <form onSubmit={handleSubmit} autoComplete="off" className="flex flex-col flex-1 min-h-0">
-              <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
-                
-                {/* Backblaze B2 Express Proxy Avatar Upload Box */}
-                <div 
-                  className="relative w-20 h-20 rounded-full flex items-center justify-center border-2 border-dashed cursor-pointer overflow-hidden mx-auto hover:border-blue-500 transition-colors"
-                  onClick={() => document.getElementById('avatarUpload').click()}
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={(e) => handleAvatarDrop(e)}
-                >
-                  {avatarPreview ? (
-                    <img src={avatarPreview} alt="Avatar Preview" className="w-full h-full object-cover" />
-                  ) : (
-                    <User className="w-8 h-8 text-slate-400" />
-                  )}
-                </div>
-                <input type="file" id="avatarUpload" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
-                <p className="text-xs text-center text-slate-500">
-                  {selectedAvatarFile ? `Selected: ${selectedAvatarFile.name}` : "Drag & drop or click to pick profile image"}
-                </p>
-
-                <div className="grid grid-cols-1 gap-4">
-                  <div>
-                    <label className="text-xs font-medium text-slate-500">Full Name <span className="text-red-500">*</span></label>
-                    <input
-                      type="text" name="name" required value={formData.name} onChange={handleInputChange}
-                      placeholder="Juan Dela Cruz"
-                      autoComplete="off"
-                      className={`w-full mt-1 px-4 py-2 rounded-lg border focus:ring-4 outline-none ${inputStyling} ${!nameValid ? 'border-red-400' : ''}`}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-xs font-medium text-slate-500">Phone <span className="text-red-500">*</span></label>
-                    <div className="mt-1">
-                      <PhoneInput
-                        value={phone}
-                        onChange={(val) => setPhone(val || '')}
-                        defaultCountry="PH"
-                        international
-                      />
-                    </div>
-                    {phone && !phoneValid && <p className={errorText}>Enter a valid phone number (e.g. +63 912 345 6789).</p>}
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-slate-500">Email <span className="text-red-500">*</span></label>
-                    <input
-                      type="email" 
-                      name="email" 
-                      required 
-                      autoComplete="off"
-                      data-lpignore="true"
-                      data-form-type="other"
-                      value={formData.email} 
-                      onChange={handleInputChange}
-                      placeholder="example@gmail.com"
-                      className={`w-full mt-1 px-4 py-2 rounded-lg border focus:ring-4 outline-none ${inputStyling} ${formData.email && !emailValid ? 'border-red-400' : ''}`}
-                    />
-                    {formData.email && !emailValid && <p className={errorText}>Enter a valid email address.</p>}
-                  </div>
-
-                  <div>
-                    <label className="text-xs font-medium text-slate-500">
-                      Password {!editingAdmin && <span className="text-red-500">*</span>}
-                    </label>
-                    <div className="relative mt-1">
-                      <input
-                        type={showPassword ? 'text' : 'password'}
-                        name="password"
-                        required={!editingAdmin}
-                        disabled={!!editingAdmin}
-                        autoComplete="new-password"
-                        data-lpignore="true"
-                        data-form-type="other"
-                        value={formData.password}
-                        onChange={handleInputChange}
-                        placeholder="••••••••"
-                        className={`w-full px-4 py-2 pr-10 rounded-lg border focus:ring-4 outline-none ${inputStyling} disabled:opacity-50`}
-                      />
-                      {!editingAdmin && (
-                        <button
-                          type="button"
-                          onClick={() => setShowPassword(!showPassword)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
-                          tabIndex={-1}
-                        >
-                          {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                        </button>
-                      )}
-                    </div>
-
-                    {!editingAdmin && formData.password && (
-                      <div className="mt-2">
-                        <div className="h-1.5 w-full rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
-                          <div className={`h-full ${strength.color} transition-all`} style={{ width: `${(strength.score / 4) * 100}%` }} />
-                        </div>
-                        <span className="text-[11px] font-medium mt-1 block">{strength.label}</span>
-                      </div>
-                    )}
-
-                    {!editingAdmin && (
-                      <ul className="mt-2 space-y-1">
-                        {passwordRequirementResults.map((req) => (
-                          <li key={req.key} className={`flex items-center gap-1.5 text-xs ${req.met ? 'text-emerald-500' : 'text-slate-400'}`}>
-                            {req.met ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Circle className="w-3.5 h-3.5" />}
-                            {req.label}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              <div className={`flex justify-end gap-3 px-6 py-4 border-t shrink-0 ${borderSeparator}`}>
-                <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2 rounded-lg border hover:bg-slate-100 dark:hover:bg-slate-800">Cancel</button>
-                {isSaving ? (
-                  <Badge variant="secondary" className="px-5 py-2">
-                    <Spinner /> {editingAdmin ? 'Saving Changes' : 'Creating Account'}
-                  </Badge>
-                ) : (
-                  <button
-                    type="submit"
-                    disabled={!isFormValid}
-                    className="px-5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-                  >
-                    {editingAdmin ? 'Save Changes' : 'Create Account'}
-                  </button>
-                )}
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Archive Confirmation Modal */}
-      {isArchiveModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-fade-in">
-          <div className={`w-full max-w-md rounded-2xl border p-6 shadow-xl relative scale-in-center transition-all ${
-            darkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-800'
-          }`}>
-            <div className="flex items-start gap-4">
-              <div className="p-3 bg-amber-500/10 text-amber-500 rounded-xl shrink-0">
-                <Archive className="w-6 h-6" />
-              </div>
-              <div className="space-y-1.5 w-full">
-                <h3 className="text-lg font-bold">Archive Administrator Account?</h3>
-                <p className={`text-sm ${textSecondary}`}>
-                  <strong className={textPrimary}>{adminToArchive?.name}</strong> will be moved to the Archived list and removed from active admin counts. This can be undone anytime by restoring the account.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-3 pt-4 mt-6 border-t border-slate-100 dark:border-slate-800">
-              <button 
-                type="button" 
-                disabled={isArchiving}
-                onClick={() => { setIsArchiveModalOpen(false); setAdminToArchive(null); }}
-                className="px-4 py-2 rounded-lg border hover:bg-slate-100 dark:hover:bg-slate-800 font-medium disabled:opacity-50 transition-colors cursor-pointer"
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+                disabled={currentPage === 1}
+                aria-label="Previous page"
+                className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50 transition-colors cursor-pointer"
               >
-                Cancel
+                <ChevronLeft className="h-4 w-4" /> Previous
               </button>
-              {isArchiving ? (
-                <Badge variant="warning" className="px-4 py-2">
-                  <Spinner /> Archiving
-                </Badge>
-              ) : (
-                <button 
-                  type="button"
-                  onClick={confirmArchive}
-                  className="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-semibold shadow transition-colors cursor-pointer"
-                >
-                  Archive Account
-                </button>
-              )}
+              <span className="text-xs text-slate-600 dark:text-slate-400 px-2">
+                Page {currentPage} of {totalPages}
+              </span>
+              <button
+                onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+                disabled={currentPage === totalPages}
+                aria-label="Next page"
+                className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50 transition-colors cursor-pointer"
+              >
+                Next <ChevronRight className="h-4 w-4" />
+              </button>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
+
+      {/* Action Modals */}
+      <Create_Admin
+        isOpen={modals.create}
+        onClose={() => closeModal('create')}
+        onRefresh={() => handleRefresh(true)}
+      />
+
+      <View_Admin
+        isOpen={modals.view}
+        admin={selectedAdmin}
+        onClose={() => closeModal('view')}
+        isOnline={selectedAdmin ? Boolean(
+          onlinePresences[selectedAdmin.id] ?? 
+          onlinePresences[selectedAdmin.uid] ?? 
+          onlinePresences[selectedAdmin.adminId] ?? 
+          selectedAdmin.isActive ?? 
+          selectedAdmin.isOnline
+        ) : false}
+      />
+
+      <Edit_Admin
+        isOpen={modals.edit}
+        admin={selectedAdmin}
+        onClose={() => closeModal('edit')}
+        onRefresh={() => handleRefresh(true)}
+      />
+
+      <Archive_Admin
+        isOpen={modals.archive}
+        admin={selectedAdmin}
+        onClose={() => closeModal('archive')}
+        onRefresh={() => handleRefresh(true)}
+      />
+
+      {/* Enable / Disable Confirmation Dialog */}
+      <StatusToggleAlertDialog
+        isOpen={toggleDialog.isOpen}
+        admin={toggleDialog.admin}
+        isCurrentlyActive={toggleDialog.admin ? checkIsAccountEnabled(toggleDialog.admin) : false}
+        loading={actionLoadingId === toggleDialog.admin?.id}
+        onConfirm={confirmToggleStatus}
+        onClose={() => setToggleDialog({ isOpen: false, admin: null })}
+      />
+
     </div>
   );
 }

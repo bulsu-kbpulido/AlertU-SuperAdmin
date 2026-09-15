@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Terminal, Search, Copy, Check, ChevronLeft, ChevronRight, FileText, Filter, Shield, AlertTriangle, Users, Share2 } from 'lucide-react';
+import { Terminal, Search, Copy, Check, ChevronLeft, ChevronRight, FileText, Filter, Shield, AlertTriangle, Users, Share2, Radio } from 'lucide-react';
 import { db } from '../firebase';
 import { collection, query, limit, onSnapshot } from 'firebase/firestore';
 import { onAuditLogReceived } from '../socket';
@@ -172,12 +172,18 @@ export default function AuditLogs({ darkMode }) {
       <div className={`border rounded-2xl p-6 mb-6 shadow-xs ${cardBg}`}>
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div className="space-y-1">
-            <h1 className={`text-xl font-bold flex items-center gap-2.5 ${darkMode ? 'text-white' : 'text-slate-900'}`}>
-              <div className={`p-2 rounded-xl border ${darkMode ? 'bg-blue-950/60 text-blue-400 border-blue-800/50' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>
-                <FileText className="w-5 h-5" />
-              </div>
-              Administrator Activity & Audit Logs
-            </h1>
+            <div className="flex items-center gap-3 flex-wrap">
+              <h1 className={`text-xl font-bold flex items-center gap-2.5 ${darkMode ? 'text-white' : 'text-slate-900'}`}>
+                <div className={`p-2 rounded-xl border ${darkMode ? 'bg-blue-950/60 text-blue-400 border-blue-800/50' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>
+                  <FileText className="w-5 h-5" />
+                </div>
+                Administrator Activity & Audit Logs
+              </h1>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                <Radio className="w-3.5 h-3.5 text-emerald-500 animate-pulse" />
+                Live Stream
+              </span>
+            </div>
             <p className={`text-sm ${textSubtle}`}>
               Captures and audits all operational actions performed by administrators in AlertU.
             </p>
@@ -248,9 +254,16 @@ export default function AuditLogs({ darkMode }) {
               const consoleMessage = getConsoleLogString(log);
               const actionTitle = formatActionDisplay(log.action);
               const actorName = log.adminName || log.performedBy || 'System Admin';
+              const adminId = log.adminId || null;
+              const dept = log.department || log.metadata?.department || null;
               const targetDesc = log.target || log.targetUser || 'System';
               const logId = log.id || log.eventId;
               const isCopied = copiedId === logId;
+              const logDate = parseDate(log.createdAt) || parseDate(log.timestamp);
+              const isRecent = logDate && (Date.now() - logDate.getTime() < 5 * 60 * 1000);
+              const severity = log.metadata?.verifiedSeverity;
+              const reportTitle = log.metadata?.reportTitle;
+              const agencies = Array.isArray(log.metadata?.selectedAgencies) ? log.metadata.selectedAgencies : [];
 
               return (
                 <div
@@ -259,22 +272,78 @@ export default function AuditLogs({ darkMode }) {
                 >
                   {/* Log Content */}
                   <div className="flex items-start sm:items-center gap-3 min-w-0 flex-1">
-                    <span className={`shrink-0 text-[11px] font-mono font-semibold tracking-wide px-2.5 py-1 rounded-lg border select-none ${
-                      darkMode ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-slate-100 text-slate-600 border-slate-200/60'
-                    }`}>
-                      {formatTimestamp(log.createdAt, log.timestamp)}
-                    </span>
-                    <div className="min-w-0 flex-1 space-y-0.5">
+                    <div className="flex items-center gap-2 shrink-0">
+                      {isRecent && (
+                        <span className="relative flex h-2 w-2">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                        </span>
+                      )}
+                      <span className={`text-[11px] font-mono font-semibold tracking-wide px-2.5 py-1 rounded-lg border select-none ${
+                        darkMode ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-slate-100 text-slate-600 border-slate-200/60'
+                      }`}>
+                        {formatTimestamp(log.createdAt, log.timestamp)}
+                      </span>
+                    </div>
+
+                    <div className="min-w-0 flex-1 space-y-1">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className={`text-sm font-bold ${darkMode ? 'text-white' : 'text-slate-900'}`}>
                           {actionTitle}
                         </span>
+                        {isRecent && (
+                          <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 uppercase tracking-wider">
+                            Live
+                          </span>
+                        )}
+                        {severity && (
+                          <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${
+                            severity === 'Critical' || severity === 'High'
+                              ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20'
+                              : severity === 'Moderate' || severity === 'Medium'
+                              ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'
+                              : 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20'
+                          }`}>
+                            {severity}
+                          </span>
+                        )}
                       </div>
-                      <p className={`text-xs font-mono break-all leading-relaxed ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
-                        <span className={`font-semibold ${darkMode ? 'text-slate-200' : 'text-slate-700'}`}>{actorName}</span>
-                        {` → ${targetDesc}`}
-                        {log.details && log.details !== consoleMessage ? ` • ${log.details}` : ''}
-                      </p>
+
+                      <div className="flex items-center gap-2 flex-wrap text-xs font-mono leading-relaxed">
+                        <strong className={`font-semibold ${darkMode ? 'text-slate-200' : 'text-slate-800'}`}>
+                          {actorName}
+                        </strong>
+                        {adminId && (
+                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-200/70 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                            {adminId}
+                          </span>
+                        )}
+                        {dept && (
+                          <span className="text-[10px] font-semibold px-1.5 py-0.2 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                            {dept}
+                          </span>
+                        )}
+                        <span className={darkMode ? 'text-slate-400' : 'text-slate-500'}>
+                          → <span className={`font-medium ${darkMode ? 'text-slate-300' : 'text-slate-700'}`}>{targetDesc}</span>
+                        </span>
+                        {reportTitle && reportTitle !== targetDesc && (
+                          <span className="italic text-slate-400">({reportTitle})</span>
+                        )}
+                        {log.details && log.details !== consoleMessage && (
+                          <span className="text-slate-500"> • {log.details}</span>
+                        )}
+                      </div>
+
+                      {agencies.length > 0 && (
+                        <div className="flex items-center gap-1.5 pt-0.5 flex-wrap">
+                          <span className="text-[10px] text-slate-400 font-sans">Agencies:</span>
+                          {agencies.map((agency, idx) => (
+                            <span key={idx} className="px-1.5 py-0.2 rounded text-[9px] font-semibold bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-sans">
+                              {agency}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
 

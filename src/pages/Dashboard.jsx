@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import { Activity, Users, UserCheck, Clock, FileText, AlertTriangle, Inbox } from 'lucide-react';
+import { Activity, Users, UserCheck, Clock, FileText, AlertTriangle, Inbox, Radio } from 'lucide-react';
 import { db } from '../firebase';
 import {
   collection,
@@ -71,7 +71,7 @@ export default function Dashboard({ darkMode }) {
   useEffect(() => {
     const logsQuery = query(
       collection(db, 'audit_logs'),
-      limit(60)
+      limit(150)
     );
     const unsubscribe = onSnapshot(
       logsQuery,
@@ -278,9 +278,9 @@ export default function Dashboard({ darkMode }) {
     {
       label: 'Total Admins',
       value: loadingAdmins ? '...' : `${totalAdmins}`,
-      change: 'Registered across all departments',
+      change: 'Registered in the admin platform',
       icon: Users,
-      color: darkMode ? 'border-purple-500 text-purple-400 bg-purple-950/40' : 'border-purple-500 text-purple-600 bg-purple-50',
+      color: darkMode ? 'border-emerald-500 text-emerald-400 bg-emerald-950/40' : 'border-emerald-500 text-emerald-600 bg-emerald-50',
     },
     {
       label: 'Active Admins',
@@ -305,7 +305,7 @@ export default function Dashboard({ darkMode }) {
       value: loadingLogs ? '...' : `${meaningfulLogs.length}`,
       change: 'Operational events captured live',
       icon: FileText,
-      color: darkMode ? 'border-blue-500 text-blue-400 bg-blue-950/40' : 'border-blue-500 text-blue-600 bg-blue-50',
+      color: darkMode ? 'border-slate-500 text-slate-400 bg-slate-800/40' : 'border-slate-400 text-slate-600 bg-slate-100',
     },
   ];
 
@@ -362,6 +362,12 @@ export default function Dashboard({ darkMode }) {
                 Key incident dispatches, user updates, and system movements by administrators.
               </p>
             </div>
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold tracking-wide bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                <Radio className="w-3 h-3 text-emerald-500 animate-pulse" />
+                LIVE STREAM
+              </span>
+            </div>
           </div>
 
           <div className="mt-4 space-y-3">
@@ -373,27 +379,98 @@ export default function Dashboard({ darkMode }) {
             )}
             {meaningfulLogs.slice(0, 8).map((log) => {
               const actorName = log.adminName || log.performedBy || 'Admin Operator';
+              const adminId = log.adminId || null;
+              const dept = log.department || log.metadata?.department || null;
               const targetDesc = log.target || log.targetUser || '';
               const actionTitle = formatActionDisplay(log.action);
+              const logDate = parseDate(log.createdAt) || parseDate(log.timestamp);
+              const isRecent = logDate && (Date.now() - logDate.getTime() < 5 * 60 * 1000);
+              const severity = log.metadata?.verifiedSeverity;
+              const reportTitle = log.metadata?.reportTitle;
+              const agencies = Array.isArray(log.metadata?.selectedAgencies) ? log.metadata.selectedAgencies : [];
 
               return (
-                <div key={log.id || log.eventId} className={`flex items-center justify-between p-4 rounded-lg border transition-colors ${rowBg}`}>
-                  <div className="flex items-center gap-3 min-w-0">
-                    <span className="w-2.5 h-2.5 rounded-full bg-blue-500 shrink-0" />
-                    <div className="min-w-0">
-                      <span className="text-sm font-semibold block truncate text-slate-900 dark:text-slate-100">
-                        {actionTitle}
-                      </span>
-                      <span className="text-[11px] text-slate-500 dark:text-slate-400 truncate block">
-                        <strong className="font-semibold text-slate-700 dark:text-slate-300">{actorName}</strong>
-                        {targetDesc ? ` • Target: ${targetDesc}` : ''}
-                      </span>
+                <div key={log.id || log.eventId} className={`p-3.5 rounded-lg border transition-colors ${rowBg}`}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-start gap-3 min-w-0">
+                      <div className="mt-1 shrink-0">
+                        {isRecent ? (
+                          <span className="relative flex h-2.5 w-2.5">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                          </span>
+                        ) : (
+                          <span className="w-2.5 h-2.5 rounded-full bg-blue-500 block" />
+                        )}
+                      </div>
+                      <div className="min-w-0 space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                            {actionTitle}
+                          </span>
+                          {isRecent && (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 uppercase tracking-wider">
+                              Live
+                            </span>
+                          )}
+                          {severity && (
+                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                              severity === 'Critical' || severity === 'High'
+                                ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20'
+                                : severity === 'Moderate' || severity === 'Medium'
+                                ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'
+                                : 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20'
+                            }`}>
+                              {severity}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2 flex-wrap text-[11px] text-slate-500 dark:text-slate-400">
+                          <strong className="font-semibold text-slate-700 dark:text-slate-300">
+                            {actorName}
+                          </strong>
+                          {adminId && (
+                            <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-slate-200/70 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                              {adminId}
+                            </span>
+                          )}
+                          {dept && (
+                            <span className="px-1.5 py-0.5 rounded font-semibold text-[10px] bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                              {dept}
+                            </span>
+                          )}
+                          {targetDesc && (
+                            <span>• Target: <strong className="text-slate-700 dark:text-slate-300">{targetDesc}</strong></span>
+                          )}
+                          {reportTitle && reportTitle !== targetDesc && (
+                            <span className="truncate max-w-[200px] italic">({reportTitle})</span>
+                          )}
+                        </div>
+
+                        {agencies.length > 0 && (
+                          <div className="flex items-center gap-1.5 pt-0.5 flex-wrap">
+                            <span className="text-[10px] text-slate-400">Agencies:</span>
+                            {agencies.map((agency, idx) => (
+                              <span key={idx} className="px-1.5 py-0.2 rounded text-[9px] font-semibold bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                                {agency}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                  <div className="text-right shrink-0 pl-3">
-                    <span className={`text-xs font-mono font-bold block ${darkMode ? 'text-slate-300' : 'text-slate-600'}`}>
-                      {formatTimestamp(log.createdAt, log.timestamp)}
-                    </span>
+
+                    <div className="text-right shrink-0 pl-2">
+                      <span className={`text-xs font-mono font-bold block ${darkMode ? 'text-slate-300' : 'text-slate-600'}`}>
+                        {formatTimestamp(log.createdAt, log.timestamp)}
+                      </span>
+                      {logDate && (
+                        <span className="text-[10px] text-slate-400 block mt-0.5">
+                          {timeAgo(logDate)}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
               );
