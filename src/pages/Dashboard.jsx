@@ -4,6 +4,7 @@ import { db } from '../firebase';
 import {
   collection,
   query,
+  orderBy,
   limit,
   onSnapshot,
 } from 'firebase/firestore';
@@ -11,7 +12,24 @@ import { onAuditLogReceived } from '../socket';
 import { isMeaningfulAdminActivity, formatActionDisplay } from '../utils/auditActivity';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 
-const RESOLVED_ACTIONS = new Set(['RESOLVE_REPORT', 'ARCHIVE_REPORT', 'REJECT_REPORT']);
+// The action names actually logged when an incident gets closed out:
+// - 'REPORT_RESOLVED' and 'REPORT_ARCHIVED' from AlertU-Admin's
+//   Send_Reports.jsx (the "Resolve"/"Archive" buttons on already-verified
+//   VRID incidents) — confirmed via useAuditLog.js's logMovement calls.
+// - 'VERIFIED_REPORT_DISPATCH' and 'REPORT_REJECTED' from
+//   Report_Management.jsx (verifying/rejecting a report before it's a VRID).
+// Earlier versions of this set used RESOLVE_REPORT/ARCHIVE_REPORT/
+// REJECT_REPORT, which don't match ANY of these — so a resolved or
+// archived incident never registered as resolved and stayed stuck in
+// "Active Incidents" indefinitely. Both getDisplayId() (Send_Reports.jsx)
+// and logGenerateSharedLink() (useAuditLog.js) use the same raw ID format
+// (e.g. "VRID00000082", no prefix), so target strings match correctly.
+const RESOLVED_ACTIONS = new Set([
+  'REPORT_RESOLVED',
+  'REPORT_ARCHIVED',
+  'VERIFIED_REPORT_DISPATCH',
+  'REPORT_REJECTED',
+]);
 const REPORT_FETCH_LIMIT = 100;
 
 const parseDate = (val) => {
@@ -68,9 +86,17 @@ export default function Dashboard({ darkMode }) {
   }, []);
 
   // 2. Real-time Firestore sync for Audit Logs
+  // IMPORTANT: orderBy is required before limit() here. Without it, Firestore
+  // has no guaranteed ordering and limit(150) can return an arbitrary subset
+  // of documents — which, once the collection grows past 150 entries, can
+  // easily exclude the newest ones entirely. That's why "Recent Admin
+  // Activity" appeared frozen on old dates (e.g. Sep 10) even after many new
+  // actions were performed and successfully logged to the backend: the new
+  // documents were being written, just never included in the fetched window.
   useEffect(() => {
     const logsQuery = query(
       collection(db, 'audit_logs'),
+      orderBy('createdAt', 'desc'),
       limit(150)
     );
     const unsubscribe = onSnapshot(
@@ -109,6 +135,11 @@ export default function Dashboard({ darkMode }) {
   }, []);
 
   // 4. Real-time Firestore sync for Reports (read-only, for Pending Review oversight)
+  // This mirrors AlertU-Admin's Report_Management.jsx "Active Reports" tab, which
+  // queries the 'reports' collection (the live report inbox) — not
+  // 'citizenreporttracking', which is a separate historical log collection whose
+  // entries stay frozen at status:"pending" indefinitely and don't reflect
+  // whether a report has actually been handled.
   useEffect(() => {
     const reportsQuery = query(
       collection(db, 'reports'),
@@ -143,13 +174,16 @@ export default function Dashboard({ darkMode }) {
     (a) => a.status === 'active' || a.status === undefined || a.status === null
   ).length;
 
-  // Pending Review: reports with no status yet (not verified, not rejected, not duplicate) —
-  // meaning no admin has taken any action on them yet.
+  // Pending Review: reports whose status is explicitly "pending" (the actual
+  // value citizenreporttracking documents use — e.g. RID00000015 has
+  // status: "pending") and that aren't flagged as duplicates. Previously
+  // this checked `!r.status` (i.e. "no status field at all"), which never
+  // matched real documents since they always carry an explicit status string.
   const pendingReports = useMemo(() => {
     const results = reports
-      .filter((r) => !r.status && r.isDuplicate !== true)
+      .filter((r) => String(r.status || '').toLowerCase() === 'pending' && r.isDuplicate !== true)
       .map((r) => ({
-        id: r.reportID || r.id,
+        id: r.reportID || r.ReportId || r.id,
         title: r.reportTitle || r.incidentType || r.hazard || 'General Incident',
         submittedAt: parseDate(r.timestamp || r.createdAt || r.submittedAt),
       }));
