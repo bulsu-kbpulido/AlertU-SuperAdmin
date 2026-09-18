@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import { auth, db } from './firebase';
 import { useIdleTimer } from './hooks/useIdleTimer';
 import { resolveSuperAdminDocId } from './utils/superAdminDoc';
+import { registerSocketUser, disconnectSocketUser } from './socket';
 import { useAuditLog } from './useAuditLog';
 import LoginPage from './LoginPage';
 import Sidebar from './components/Sidebar';
@@ -69,6 +70,14 @@ export default function App() {
       setUser(currentUser);
       setCheckingAuth(false);
 
+      if (currentUser) {
+        registerSocketUser({
+          uid: currentUser.uid,
+          name: currentUser.displayName || currentUser.email,
+          email: currentUser.email,
+        });
+      }
+
       if (currentUser && !hasLoggedSessionRef.current) {
         hasLoggedSessionRef.current = true;
         try {
@@ -112,6 +121,7 @@ export default function App() {
   // Unified sign-out handler
   const handleSignOut = async () => {
     try {
+      disconnectSocketUser();
       localStorage.removeItem('adminToken');
       localStorage.removeItem('authToken');
       sessionStorage.removeItem('adminToken');
