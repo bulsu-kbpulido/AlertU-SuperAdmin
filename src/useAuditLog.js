@@ -195,6 +195,100 @@ export const useAuditLog = ({
   );
 
   // ====================================================
+  // 👤 CITIZEN MANAGEMENT AUDIT HELPERS
+  // ====================================================
+
+  const logViewCitizen = useCallback(
+    (citizen) => {
+      const targetId = citizen?.citizenId || citizen?.id || citizen?.email || 'CITIZEN';
+      return logMovement({
+        action: 'VIEW_CITIZEN',
+        target: targetId,
+        details: `Viewed citizen record for ${citizen?.name || citizen?.email}`,
+        metadata: {
+          citizenName: citizen?.name || 'N/A',
+          citizenEmail: citizen?.email || 'N/A',
+          viewedAt: new Date().toISOString(),
+        },
+      });
+    },
+    [logMovement]
+  );
+
+  const logRegisterCitizen = useCallback(
+    (newCitizen) => {
+      const targetId = newCitizen?.citizenId || newCitizen?.email || newCitizen?.name || 'CITIZEN';
+      return logMovement({
+        action: 'CREATE_CITIZEN',
+        target: targetId,
+        details: `Registered citizen account for ${newCitizen?.name || newCitizen?.email}`,
+        metadata: {
+          citizenName: newCitizen?.name || 'N/A',
+          citizenEmail: newCitizen?.email || 'N/A',
+          address: newCitizen?.address || 'N/A',
+          phone: newCitizen?.phone || 'N/A',
+          registeredAt: new Date().toISOString(),
+        },
+      });
+    },
+    [logMovement]
+  );
+
+  const logEditCitizen = useCallback(
+    (citizen, updatedFields = {}) => {
+      const targetId = citizen?.citizenId || citizen?.email || citizen?.id || 'CITIZEN';
+      return logMovement({
+        action: 'EDIT_CITIZEN',
+        target: targetId,
+        details: `Updated citizen record for ${citizen?.name || citizen?.email}`,
+        metadata: {
+          citizenName: citizen?.name || 'N/A',
+          citizenEmail: citizen?.email || 'N/A',
+          updatedFields,
+          editedAt: new Date().toISOString(),
+        },
+      });
+    },
+    [logMovement]
+  );
+
+  const logToggleCitizenStatus = useCallback(
+    (citizen, newStatus) => {
+      const targetId = citizen?.citizenId || citizen?.email || citizen?.id || 'CITIZEN';
+      return logMovement({
+        action: 'TOGGLE_CITIZEN_STATUS',
+        target: targetId,
+        details: `${newStatus ? 'Enabled' : 'Disabled'} citizen account for ${citizen?.name || citizen?.email}`,
+        metadata: {
+          citizenName: citizen?.name || 'N/A',
+          citizenEmail: citizen?.email || 'N/A',
+          newStatus: newStatus ? 'enabled' : 'disabled',
+          changedAt: new Date().toISOString(),
+        },
+      });
+    },
+    [logMovement]
+  );
+
+  const logArchiveCitizen = useCallback(
+    (citizen, reason = '') => {
+      const targetId = citizen?.citizenId || citizen?.email || citizen?.id || 'CITIZEN';
+      return logMovement({
+        action: 'ARCHIVE_CITIZEN',
+        target: targetId,
+        details: `Archived citizen record for ${citizen?.name || citizen?.email}`,
+        metadata: {
+          citizenName: citizen?.name || 'N/A',
+          citizenEmail: citizen?.email || 'N/A',
+          reason,
+          archivedAt: new Date().toISOString(),
+        },
+      });
+    },
+    [logMovement]
+  );
+
+  // ====================================================
   // 👑 SUPERADMIN PROFILE & SECURITY HELPERS
   // ====================================================
 
@@ -285,6 +379,13 @@ export const useAuditLog = ({
     logEditAdmin,
     logArchiveAdmin,
     logRestoreAdmin,
+
+    // Citizen Management Helpers
+    logViewCitizen,
+    logRegisterCitizen,
+    logEditCitizen,
+    logToggleCitizenStatus,
+    logArchiveCitizen,
 
     // SuperAdmin Profile & Security Helpers
     logSuperAdminProfileUpdate,
