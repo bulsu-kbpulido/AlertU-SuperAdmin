@@ -33,14 +33,15 @@ export default function Sidebar({
   onSignOut,
 }) {
   const menuItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'admins', label: 'Admin Management', icon: Users },
     { id: 'logs', label: 'Audit Logs', icon: FileText },
   ];
 
-  // Incident-monitoring sub-views, ported from the Admin panel's Dashboard
-  const incidentDashboardSubItems = [
-    { id: 'incident-dashboard', label: 'Overview', icon: LayoutDashboard },
+  // Dashboard sub-views: the Super Admin's own admin overview, plus the
+  // incident-monitoring sections ported from the Admin panel's Dashboard
+  const dashboardSubItems = [
+    { id: 'dashboard', label: 'Admin Overview', icon: LayoutDashboard },
+    { id: 'incident-dashboard', label: 'Incident Overview', icon: AlertTriangle },
     { id: 'incident-dashboard-mid', label: 'Report Statistics', icon: Activity },
     { id: 'incident-dashboard-bottom', label: 'Barangay', icon: BarChart3 },
     { id: 'incident-dashboard-last', label: 'Agency Statistics', icon: Building2 },
@@ -57,8 +58,8 @@ export default function Sidebar({
     { id: 'citizen-management', label: 'Manage Citizens', icon: UserCircle2 },
   ];
 
-  const isIncidentDashboardActive = incidentDashboardSubItems.some(
-    (sub) => sub.id === activePage || activePage.startsWith('incident-dashboard')
+  const isDashboardActive = dashboardSubItems.some(
+    (sub) => sub.id === activePage
   );
 
   const handleLogout = async () => {
@@ -158,6 +159,62 @@ export default function Sidebar({
 
         {/* NAVIGATION DIRECTORY */}
         <nav className="flex-1 space-y-1.5 overflow-y-auto px-3 py-5">
+
+          {/* DASHBOARD PARENT: own Admin Overview + incident-monitoring sections ported from the Admin panel */}
+          <div className="space-y-1">
+            <button
+              onClick={() => handleItemClick('dashboard')}
+              className={`group relative flex w-full items-center gap-3.5 rounded-xl px-3.5 py-3 text-sm font-semibold tracking-wide transition-all outline-none duration-200 cursor-pointer overflow-hidden ${
+                isDashboardActive
+                  ? 'bg-blue-50 text-blue-700 shadow-xs dark:bg-blue-500/10 dark:text-blue-400'
+                  : 'text-slate-600 hover:bg-slate-100/80 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800/60 dark:hover:text-slate-100'
+              }`}
+            >
+              {isDashboardActive && (
+                <span className="absolute left-0 top-2.5 h-6 w-1 rounded-r-full bg-blue-600 dark:bg-blue-500" />
+              )}
+
+              <LayoutDashboard
+                className={`h-5 w-5 shrink-0 transition-transform duration-150 ${
+                  isDashboardActive
+                    ? 'text-blue-600 dark:text-blue-400'
+                    : 'text-slate-400 group-hover:text-slate-600 dark:text-slate-500 dark:group-hover:text-slate-300'
+                }`}
+              />
+
+              <span className="truncate whitespace-nowrap">Dashboard</span>
+            </button>
+
+            {/* Sub-menu Navigation Links */}
+            <div className="ml-2 space-y-1 border-l-2 border-slate-100 pl-2 dark:border-slate-800">
+              {dashboardSubItems.map((sub) => {
+                const SubIcon = sub.icon;
+                const isSubActive = activePage === sub.id;
+
+                return (
+                  <button
+                    key={sub.id}
+                    onClick={() => handleItemClick(sub.id)}
+                    className={`group relative flex w-full items-center gap-2.5 rounded-xl px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider transition-all outline-none duration-200 cursor-pointer overflow-hidden ${
+                      isSubActive
+                        ? 'text-blue-600 dark:text-blue-400'
+                        : 'text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300'
+                    }`}
+                  >
+                    <SubIcon
+                      className={`h-4 w-4 shrink-0 transition-transform duration-150 ${
+                        isSubActive
+                          ? 'text-blue-600 dark:text-blue-400'
+                          : 'text-slate-400 group-hover:text-slate-600 dark:text-slate-500 dark:group-hover:text-slate-300'
+                      }`}
+                    />
+                    <span className="truncate whitespace-nowrap">{sub.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           {menuItems.map((item) => {
             const Icon = item.icon;
             const isActive = activePage === item.id;
@@ -188,61 +245,6 @@ export default function Sidebar({
               </button>
             );
           })}
-
-          {/* INCIDENT DASHBOARD PARENT (ported from Admin panel) */}
-          <div className="space-y-1 pt-1">
-            <button
-              onClick={() => handleItemClick('incident-dashboard')}
-              className={`group relative flex w-full items-center gap-3.5 rounded-xl px-3.5 py-3 text-sm font-semibold tracking-wide transition-all outline-none duration-200 cursor-pointer overflow-hidden ${
-                isIncidentDashboardActive
-                  ? 'bg-blue-50 text-blue-700 shadow-xs dark:bg-blue-500/10 dark:text-blue-400'
-                  : 'text-slate-600 hover:bg-slate-100/80 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800/60 dark:hover:text-slate-100'
-              }`}
-            >
-              {isIncidentDashboardActive && (
-                <span className="absolute left-0 top-2.5 h-6 w-1 rounded-r-full bg-blue-600 dark:bg-blue-500" />
-              )}
-
-              <AlertTriangle
-                className={`h-5 w-5 shrink-0 transition-transform duration-150 ${
-                  isIncidentDashboardActive
-                    ? 'text-blue-600 dark:text-blue-400'
-                    : 'text-slate-400 group-hover:text-slate-600 dark:text-slate-500 dark:group-hover:text-slate-300'
-                }`}
-              />
-
-              <span className="truncate whitespace-nowrap">Incident Dashboard</span>
-            </button>
-
-            {/* Sub-menu Navigation Links */}
-            <div className="ml-2 space-y-1 border-l-2 border-slate-100 pl-2 dark:border-slate-800">
-              {incidentDashboardSubItems.map((sub) => {
-                const SubIcon = sub.icon;
-                const isSubActive = activePage === sub.id;
-
-                return (
-                  <button
-                    key={sub.id}
-                    onClick={() => handleItemClick(sub.id)}
-                    className={`group relative flex w-full items-center gap-2.5 rounded-xl px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider transition-all outline-none duration-200 cursor-pointer overflow-hidden ${
-                      isSubActive
-                        ? 'text-blue-600 dark:text-blue-400'
-                        : 'text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300'
-                    }`}
-                  >
-                    <SubIcon
-                      className={`h-4 w-4 shrink-0 transition-transform duration-150 ${
-                        isSubActive
-                          ? 'text-blue-600 dark:text-blue-400'
-                          : 'text-slate-400 group-hover:text-slate-600 dark:text-slate-500 dark:group-hover:text-slate-300'
-                      }`}
-                    />
-                    <span className="truncate whitespace-nowrap">{sub.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
 
           {/* ADDITIONAL PAGES (ported from Admin panel) */}
           {portedAdminItems.map((item) => {

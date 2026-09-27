@@ -14,6 +14,11 @@ import Dashboard from './pages/Dashboard';
 import AdminManagement from './pages/AdminManagement';
 import ProfileManagement from './pages/ProfileManagement';
 import AuditLogs from './pages/AuditLogs';
+import Report_Management from './pages/Report_Management';
+import Citizen_Management from './pages/Citizen_Management';
+import Create_Reports from './pages/Create_Reports';
+import Alert_Management from './pages/Alert_Management';
+import Send_Reports from './pages/Send_Reports';
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -59,8 +64,27 @@ export default function App() {
       case 'logs':
         document.title = 'Audit Logs – AlertU';
         break;
+      case 'report-management':
+        document.title = 'Verify Reports – AlertU';
+        break;
+      case 'create-reports':
+        document.title = 'Create Report – AlertU';
+        break;
+      case 'alerts':
+        document.title = 'Alerts – AlertU';
+        break;
+      case 'send-reports':
+        document.title = 'Dispatch Report – AlertU';
+        break;
+      case 'citizen-management':
+        document.title = 'Manage Citizens – AlertU';
+        break;
       default:
-        document.title = 'Dashboard – AlertU';
+        if (activePage.startsWith('incident-dashboard')) {
+          document.title = 'Incident Dashboard – AlertU';
+        } else {
+          document.title = 'Dashboard – AlertU';
+        }
         break;
     }
   }, [activePage, user]);
@@ -148,7 +172,20 @@ export default function App() {
         return <ProfileManagement darkMode={darkMode} setDarkMode={setDarkMode} />;
       case 'logs':
         return <AuditLogs darkMode={darkMode} />;
+      case 'report-management':
+        return <Report_Management />;
+      case 'create-reports':
+        return <Create_Reports />;
+      case 'alerts':
+        return <Alert_Management />;
+      case 'send-reports':
+        return <Send_Reports />;
+      case 'citizen-management':
+        return <Citizen_Management />;
       default:
+        // 'incident-dashboard' and its sub-items (Overview / Report Statistics /
+        // Barangay / Agency Statistics) aren't ported yet — falls back to the
+        // SuperAdmin's own Dashboard for now, same as before this edit.
         return <Dashboard darkMode={darkMode} />;
     }
   };
