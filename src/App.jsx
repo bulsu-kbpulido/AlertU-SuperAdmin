@@ -19,6 +19,7 @@ import Citizen_Management from './pages/Citizen_Management';
 import Create_Reports from './pages/Create_Reports';
 import Alert_Management from './pages/Alert_Management';
 import Send_Reports from './pages/Send_Reports';
+import Incident_Dashboard from './pages/Incident_Dashboard';
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -184,8 +185,10 @@ export default function App() {
         return <Citizen_Management />;
       default:
         // 'incident-dashboard' and its sub-items (Overview / Report Statistics /
-        // Barangay / Agency Statistics) aren't ported yet — falls back to the
-        // SuperAdmin's own Dashboard for now, same as before this edit.
+        // Barangay / Agency Statistics), ported from the Admin panel's Dashboard.
+        if (activePage.startsWith('incident-dashboard')) {
+          return <Incident_Dashboard activePage={activePage} />;
+        }
         return <Dashboard darkMode={darkMode} />;
     }
   };

@@ -369,6 +369,69 @@ export const useAuditLog = ({
     [logMovement]
   );
 
+  // ====================================================
+  // 🔗 SHARED LINK & EXPORT HELPERS
+  // (ported from the Admin panel's Send Reports / Dashboard export tools)
+  // ====================================================
+
+  const logGenerateSharedLink = useCallback(
+    (report, extra = {}) => {
+      const targetId =
+        report?.firestoreDocId ||
+        report?.id ||
+        report?.incidentId ||
+        report?.reportID ||
+        report?.reportId ||
+        report?.verifiedReportId ||
+        report?.verifiedreportID ||
+        'REPORT';
+      return logMovement({
+        action: 'GENERATE_SHARED_LINK',
+        target: targetId,
+        details: `Generated a shared link (target: ${extra?.target || 'unknown'}) for report ${targetId}`,
+        metadata: {
+          reportTitle: report?.reportTitle || report?.citizen || 'N/A',
+          ...extra,
+          generatedAt: new Date().toISOString(),
+        },
+      });
+    },
+    [logMovement]
+  );
+
+  const logCopySharedLink = useCallback(
+    (shortLink, target, incidentId) => {
+      return logMovement({
+        action: 'COPY_SHARED_LINK',
+        target: incidentId || 'REPORT',
+        details: `Copied the ${target || 'shared'} link for report ${incidentId || ''} to clipboard`,
+        metadata: {
+          shortLink: shortLink || 'N/A',
+          target: target || 'N/A',
+          copiedAt: new Date().toISOString(),
+        },
+      });
+    },
+    [logMovement]
+  );
+
+  const logExportFilteredReports = useCallback(
+    (format, count, extra = {}) => {
+      return logMovement({
+        action: 'EXPORT_FILTERED_REPORTS',
+        target: format || 'EXPORT',
+        details: `Exported ${count ?? 0} report(s) as ${format || 'file'}`,
+        metadata: {
+          format: format || 'N/A',
+          count: count ?? 0,
+          ...extra,
+          exportedAt: new Date().toISOString(),
+        },
+      });
+    },
+    [logMovement]
+  );
+
   return {
     logMovement,
     logAction,
@@ -394,6 +457,11 @@ export const useAuditLog = ({
     // Authentication Audit Helpers
     logLoginSuccess,
     logLoginFailed,
+
+    // Shared Link & Export Helpers
+    logGenerateSharedLink,
+    logCopySharedLink,
+    logExportFilteredReports,
   };
 };
 
