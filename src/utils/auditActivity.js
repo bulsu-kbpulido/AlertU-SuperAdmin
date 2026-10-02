@@ -25,8 +25,8 @@ export const isMeaningfulAdminActivity = (log) => {
   const adminId = String(log.adminId || '').toUpperCase().trim();
   const adminName = String(log.adminName || '').toLowerCase().trim();
 
-  // Exclude UI telemetry
-  if (TELEMETRY_ACTIONS.has(action)) {
+  // Exclude UI telemetry and system errors (shown under their own filter)
+  if (TELEMETRY_ACTIONS.has(action) || action.startsWith('SYSTEM_ERROR')) {
     return false;
   }
 
@@ -52,6 +52,16 @@ export const getActionCategory = (log) => {
 
   if (TELEMETRY_ACTIONS.has(action)) {
     return 'TELEMETRY';
+  }
+
+  if (action.startsWith('SYSTEM_ERROR')) {
+    return 'SYSTEM_ERRORS';
+  }
+
+  // Exports/shares are checked BEFORE incidents, otherwise EXPORT_FILTERED_REPORTS
+  // matches 'REPORT' and gets filed under Incidents (and shows an incident severity badge).
+  if (action.includes('EXPORT') || action.includes('SHARE') || action.includes('LINK')) {
+    return 'EXPORTS_AND_SHARING';
   }
 
   if (
@@ -81,10 +91,6 @@ export const getActionCategory = (log) => {
     return 'AUTH';
   }
 
-  if (action.includes('EXPORT') || action.includes('SHARE') || action.includes('LINK')) {
-    return 'EXPORTS_AND_SHARING';
-  }
-
   return 'OTHER';
 };
 
@@ -110,9 +116,14 @@ export const formatActionDisplay = (actionStr) => {
     VIEW_CITIZEN_PROFILE: 'Viewed Citizen Profile',
 
     CREATE_ADMIN: 'Created Admin Account',
+    DISABLE_ADMIN_ACCOUNT: 'Deactivated Admin Account',
+    ENABLE_ADMIN_ACCOUNT: 'Reactivated Admin Account',
     EDIT_ADMIN: 'Updated Admin Account',
     ARCHIVE_ADMIN: 'Archived Admin Account',
     RESTORE_ADMIN: 'Restored Admin Account',
+
+    SYSTEM_ERROR: 'System Error',
+    SUPERADMIN_LOGIN_FAILED: 'Failed Super Admin Login Attempt',
 
     LOGIN_SUCCESS: 'Administrator Logged In',
     LOGIN_FAILED: 'Failed Admin Login Attempt',

@@ -130,7 +130,7 @@ export default function Create_Admin({ isOpen, onClose, onRefresh }) {
 
     if (!isFormValid) {
       if (!nameValid) toast.error('Full Name is required.');
-      else if (!phoneValid) toast.error('Enter a valid phone number.');
+      else if (!phoneValid) toast.error('Enter a valid mobile number.');
       else if (!emailValid) toast.error('Enter a valid email address.');
       else if (!passwordValid) toast.error('Password does not meet all requirements.');
       return;
@@ -260,7 +260,7 @@ export default function Create_Admin({ isOpen, onClose, onRefresh }) {
             {/* Phone Number */}
             <div>
               <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                Phone Number <span className="text-red-500">*</span>
+                Mobile Number <span className="text-red-500">*</span>
               </label>
               <div className="mt-1.5">
                 <PhoneInput
@@ -272,7 +272,7 @@ export default function Create_Admin({ isOpen, onClose, onRefresh }) {
                 />
               </div>
               {phone && !phoneValid && (
-                <p className="text-xs text-red-500 mt-1">Enter a valid phone number (e.g. +63 912 345 6789).</p>
+                <p className="text-xs text-red-500 mt-1">Enter a valid mobile number (e.g. +63 912 345 6789).</p>
               )}
             </div>
 

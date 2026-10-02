@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import { Activity, Users, UserCheck, Clock, FileText, AlertTriangle, Inbox, Radio } from 'lucide-react';
+import { Activity, Users, UserCheck, Clock, FileText, Radio } from 'lucide-react';
 import { db } from '../firebase';
 import {
   collection,
@@ -9,28 +9,10 @@ import {
   onSnapshot,
 } from 'firebase/firestore';
 import { onAuditLogReceived } from '../socket';
-import { isMeaningfulAdminActivity, formatActionDisplay } from '../utils/auditActivity';
+import { isMeaningfulAdminActivity, formatActionDisplay, getActionCategory } from '../utils/auditActivity';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
-
-// The action names actually logged when an incident gets closed out:
-// - 'REPORT_RESOLVED' and 'REPORT_ARCHIVED' from AlertU-Admin's
-//   Send_Reports.jsx (the "Resolve"/"Archive" buttons on already-verified
-//   VRID incidents) — confirmed via useAuditLog.js's logMovement calls.
-// - 'VERIFIED_REPORT_DISPATCH' and 'REPORT_REJECTED' from
-//   Report_Management.jsx (verifying/rejecting a report before it's a VRID).
-// Earlier versions of this set used RESOLVE_REPORT/ARCHIVE_REPORT/
-// REJECT_REPORT, which don't match ANY of these — so a resolved or
-// archived incident never registered as resolved and stayed stuck in
-// "Active Incidents" indefinitely. Both getDisplayId() (Send_Reports.jsx)
-// and logGenerateSharedLink() (useAuditLog.js) use the same raw ID format
-// (e.g. "VRID00000082", no prefix), so target strings match correctly.
-const RESOLVED_ACTIONS = new Set([
-  'REPORT_RESOLVED',
-  'REPORT_ARCHIVED',
-  'VERIFIED_REPORT_DISPATCH',
-  'REPORT_REJECTED',
-]);
-const REPORT_FETCH_LIMIT = 100;
+import SecurityFlagsWidget from '../components/SecurityFlagsWidget';
+import OnlineAdminsWidget from '../components/OnlineAdminsWidget';
 
 const parseDate = (val) => {
   if (!val) return null;
@@ -52,16 +34,13 @@ const timeAgo = (date) => {
   return `${days}d ago`;
 };
 
-export default function Dashboard({ darkMode }) {
+export default function Dashboard({ darkMode, setActivePage }) {
   useDocumentTitle('Dashboard – AlertU');
 
   const [admins, setAdmins] = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
-  const [reports, setReports] = useState([]);
   const [loadingAdmins, setLoadingAdmins] = useState(true);
   const [loadingLogs, setLoadingLogs] = useState(true);
-  const [loadingReports, setLoadingReports] = useState(true);
-  const [reportsError, setReportsError] = useState(null);
 
   // 1. Real-time Firestore sync for Admins
   useEffect(() => {
@@ -134,34 +113,6 @@ export default function Dashboard({ darkMode }) {
     return () => unsubscribeSocket();
   }, []);
 
-  // 4. Real-time Firestore sync for Reports (read-only, for Pending Review oversight)
-  // This mirrors AlertU-Admin's Report_Management.jsx "Active Reports" tab, which
-  // queries the 'reports' collection (the live report inbox) — not
-  // 'citizenreporttracking', which is a separate historical log collection whose
-  // entries stay frozen at status:"pending" indefinitely and don't reflect
-  // whether a report has actually been handled.
-  useEffect(() => {
-    const reportsQuery = query(
-      collection(db, 'reports'),
-      limit(REPORT_FETCH_LIMIT)
-    );
-    const unsubscribe = onSnapshot(
-      reportsQuery,
-      (snapshot) => {
-        const reportList = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-        setReports(reportList);
-        setLoadingReports(false);
-        setReportsError(null);
-      },
-      (error) => {
-        console.error('Error fetching reports from Firestore:', error);
-        setReportsError(error.message || 'Unable to load reports.');
-        setLoadingReports(false);
-      }
-    );
-    return () => unsubscribe();
-  }, []);
-
   // Filter out noise so SuperAdmin focuses purely on meaningful admin actions
   const meaningfulLogs = useMemo(() => {
     return auditLogs.filter(isMeaningfulAdminActivity);
@@ -170,69 +121,14 @@ export default function Dashboard({ darkMode }) {
   // Admin statistics calculations
   const nonArchivedAdmins = admins.filter((a) => !a.archived);
   const totalAdmins = nonArchivedAdmins.length;
-  const activeAdmins = nonArchivedAdmins.filter(
-    (a) => a.status === 'active' || a.status === undefined || a.status === null
+  // Same "enabled" rule AdminManagement uses: isDisabled boolean first, otherwise
+  // status !== 'disabled' (case-insensitive). The old check only matched lowercase
+  // 'active', so accounts saved as 'Active' (or any other status) were not counted.
+  const activeAdmins = nonArchivedAdmins.filter((a) =>
+    typeof a.isDisabled === 'boolean'
+      ? !a.isDisabled
+      : String(a.status || '').toLowerCase() !== 'disabled'
   ).length;
-
-  // Pending Review: reports whose status is explicitly "pending" (the actual
-  // value citizenreporttracking documents use — e.g. RID00000015 has
-  // status: "pending") and that aren't flagged as duplicates. Previously
-  // this checked `!r.status` (i.e. "no status field at all"), which never
-  // matched real documents since they always carry an explicit status string.
-  const pendingReports = useMemo(() => {
-    const results = reports
-      .filter((r) => String(r.status || '').toLowerCase() === 'pending' && r.isDuplicate !== true)
-      .map((r) => ({
-        id: r.reportID || r.ReportId || r.id,
-        title: r.reportTitle || r.incidentType || r.hazard || 'General Incident',
-        submittedAt: parseDate(r.timestamp || r.createdAt || r.submittedAt),
-      }));
-
-    return results.sort((a, b) => (a.submittedAt?.getTime() || 0) - (b.submittedAt?.getTime() || 0));
-  }, [reports]);
-
-  // Active Incidents: reports with a generated share link that don't yet have a
-  // later resolve/archive/reject action logged against the same target.
-  const activeIncidents = useMemo(() => {
-    const byTarget = {};
-    auditLogs.forEach((log) => {
-      const target = log.target || log.targetUser;
-      if (!target) return;
-      if (!byTarget[target]) byTarget[target] = [];
-      byTarget[target].push(log);
-    });
-
-    const results = [];
-    Object.entries(byTarget).forEach(([target, logs]) => {
-      const sorted = [...logs].sort((a, b) => {
-        const aTime = parseDate(a.createdAt)?.getTime() || parseDate(a.timestamp)?.getTime() || 0;
-        const bTime = parseDate(b.createdAt)?.getTime() || parseDate(b.timestamp)?.getTime() || 0;
-        return bTime - aTime;
-      });
-
-      const shareLog = sorted.find((l) => String(l.action || '').toUpperCase() === 'GENERATE_SHARE_LINK');
-      if (!shareLog) return;
-
-      const shareTime = parseDate(shareLog.createdAt)?.getTime() || parseDate(shareLog.timestamp)?.getTime() || 0;
-
-      const hasLaterResolution = sorted.some((l) => {
-        const act = String(l.action || '').toUpperCase();
-        if (!RESOLVED_ACTIONS.has(act)) return false;
-        const t = parseDate(l.createdAt)?.getTime() || parseDate(l.timestamp)?.getTime() || 0;
-        return t >= shareTime;
-      });
-
-      if (hasLaterResolution) return;
-
-      results.push({
-        target,
-        adminName: shareLog.adminName || shareLog.performedBy || 'Admin',
-        time: parseDate(shareLog.createdAt) || parseDate(shareLog.timestamp),
-      });
-    });
-
-    return results.sort((a, b) => (b.time?.getTime() || 0) - (a.time?.getTime() || 0));
-  }, [auditLogs]);
 
   // Compute Last Admin Login from both Firestore admin documents and audit_logs events
   const lastLoginInfo = useMemo(() => {
@@ -346,8 +242,6 @@ export default function Dashboard({ darkMode }) {
   const cardBg = darkMode ? "bg-slate-900 border-slate-800 text-white" : "bg-white border-slate-200 text-slate-800";
   const rowBg = darkMode ? "bg-slate-950/50 border-slate-800 hover:border-slate-700" : "bg-slate-50 border-slate-100 hover:border-slate-300";
   const innerIconBg = darkMode ? "bg-slate-800/80" : "bg-white/80";
-  const pendingRowBorder = darkMode ? "border-rose-500 bg-rose-950/30" : "border-rose-500 bg-rose-50";
-  const incidentRowBorder = darkMode ? "border-amber-500 bg-amber-950/30" : "border-amber-500 bg-amber-50";
 
   const formatTimestamp = (ts, isoTimestamp) => {
     const d = parseDate(ts) || parseDate(isoTimestamp);
@@ -419,7 +313,8 @@ export default function Dashboard({ darkMode }) {
               const actionTitle = formatActionDisplay(log.action);
               const logDate = parseDate(log.createdAt) || parseDate(log.timestamp);
               const isRecent = logDate && (Date.now() - logDate.getTime() < 5 * 60 * 1000);
-              const severity = log.metadata?.verifiedSeverity;
+              // Severity only makes sense for incident-related actions (not profile updates, etc.)
+              const severity = getActionCategory(log) === 'INCIDENTS' ? log.metadata?.verifiedSeverity : null;
               const reportTitle = log.metadata?.reportTitle;
               const agencies = Array.isArray(log.metadata?.selectedAgencies) ? log.metadata.selectedAgencies : [];
 
@@ -512,75 +407,17 @@ export default function Dashboard({ darkMode }) {
           </div>
         </div>
 
-        {/* Incident Oversight: Pending Review + Active Incidents */}
-        <div className={`p-6 rounded-xl border shadow-xs ${cardBg}`}>
-
-          {/* Pending Review section */}
-          <div className="flex items-center justify-between">
-            <h2 className="text-base font-bold tracking-tight flex items-center gap-2">
-              <Inbox className="w-4.5 h-4.5 text-rose-500" />
-              Pending Review
-            </h2>
-            <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${darkMode ? 'bg-rose-950/50 text-rose-400' : 'bg-rose-100 text-rose-700'}`}>
-              {pendingReports.length}
-            </span>
-          </div>
-          <p className="text-xs text-slate-400 mt-1.5">
-            Reports no admin has acted on yet.
-          </p>
-
-          <div className="mt-3 space-y-2.5">
-            {loadingReports && (
-              <p className={`text-sm ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>Loading reports...</p>
-            )}
-            {!loadingReports && reportsError && (
-              <p className="text-xs text-rose-500">Unable to load reports right now.</p>
-            )}
-            {!loadingReports && !reportsError && pendingReports.length === 0 && (
-              <p className={`text-sm ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>No unreviewed reports.</p>
-            )}
-            {pendingReports.slice(0, 5).map((r) => (
-              <div key={r.id} className={`p-2.5 rounded-lg border-l-4 ${pendingRowBorder}`}>
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-sm font-bold truncate">{r.id}</span>
-                  <span className="text-[11px] font-semibold text-rose-500 shrink-0">{timeAgo(r.submittedAt)}</span>
-                </div>
-                <span className="text-xs text-slate-500 dark:text-slate-400 block mt-0.5 truncate capitalize">{r.title}</span>
-              </div>
-            ))}
-          </div>
-
-          {/* Active Incidents section */}
-          <div className={`flex items-center justify-between mt-6 pt-5 border-t ${darkMode ? 'border-slate-800' : 'border-slate-100'}`}>
-            <h2 className="text-base font-bold tracking-tight flex items-center gap-2">
-              <AlertTriangle className="w-4.5 h-4.5 text-amber-500" />
-              Active Incidents
-            </h2>
-            <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${darkMode ? 'bg-amber-950/50 text-amber-400' : 'bg-amber-100 text-amber-700'}`}>
-              {activeIncidents.length}
-            </span>
-          </div>
-          <p className="text-xs text-slate-400 mt-1.5">
-            Incidents with a share link, awaiting resolution.
-          </p>
-
-          <div className="mt-3 space-y-2.5">
-            {loadingLogs && (
-              <p className={`text-sm ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>Loading incidents...</p>
-            )}
-            {!loadingLogs && activeIncidents.length === 0 && (
-              <p className={`text-sm ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>No open incidents right now.</p>
-            )}
-            {activeIncidents.slice(0, 5).map((incident) => (
-              <div key={incident.target} className={`p-2.5 rounded-lg border-l-4 ${incidentRowBorder}`}>
-                <span className="text-sm font-bold block">{incident.target}</span>
-                <span className="text-xs text-slate-500 dark:text-slate-400 block mt-0.5">
-                  By {incident.adminName}
-                  {incident.time ? ` • ${formatTimestamp(incident.time)}` : ''}
-                </span>
-              </div>
-            ))}
-          </div>
+        {/* Side column: who is online + accounts that need attention.
+            (Pending Review / Active Incidents live in Incident Overview / Report Statistics) */}
+        <div className="space-y-6">
+          <OnlineAdminsWidget admins={admins} loading={loadingAdmins} darkMode={darkMode} />
+          <SecurityFlagsWidget
+            admins={admins}
+            auditLogs={auditLogs}
+            loading={loadingAdmins || loadingLogs}
+            darkMode={darkMode}
+            onReview={setActivePage ? () => setActivePage('admins') : undefined}
+          />
         </div>
 
       </div>

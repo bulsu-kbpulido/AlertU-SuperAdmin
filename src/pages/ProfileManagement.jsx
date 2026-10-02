@@ -55,7 +55,7 @@ export default function ProfileManagement({ darkMode }) {
 
   const [docId, setDocId] = useState(null);
   const [profile, setProfile] = useState({
-    name: '', username: '', email: '', avatar: '', updatedAt: null, passwordUpdatedAt: null,
+    name: '', username: '', email: '', avatar: '', updatedAt: null, passwordUpdatedAt: null, lastLogin: null,
   });
   const [phone, setPhone] = useState('');
 
@@ -101,6 +101,7 @@ export default function ProfileManagement({ darkMode }) {
             avatar: data.avatar || auth.currentUser.photoURL || '',
             updatedAt: data.updatedAt || null,
             passwordUpdatedAt: data.passwordUpdatedAt || null,
+            lastLogin: data.lastLogin || data.lastLoginAt || null,
           }));
           setPhone(data.phone || auth.currentUser.phoneNumber || '');
         } else {
@@ -149,7 +150,7 @@ export default function ProfileManagement({ darkMode }) {
 
   // Upload avatar file to Backblaze B2 via server proxy
   const uploadAvatarToB2 = async (file) => {
-    const toastId = toast.loading("Uploading profile image to storage...");
+    const toastId = toast.loading("Uploading profile image...");
     try {
       const targetUid = docId || auth.currentUser?.uid || 'superadmin';
       const formData = new FormData();
@@ -165,11 +166,11 @@ export default function ProfileManagement({ darkMode }) {
         throw new Error(data.error || data.message || 'Avatar upload failed');
       }
 
-      toast.success("Profile image uploaded to Backblaze B2!", { id: toastId });
+      toast.success("Profile image uploaded successfully.", { id: toastId });
       return data.fileUrl;
     } catch (error) {
       console.error("Backblaze B2 Avatar Upload Error:", error);
-      toast.error(error.message || "Failed to upload image to storage.", { id: toastId });
+      toast.error(error.message || "Failed to upload image. Please try again.", { id: toastId });
       throw error;
     }
   };
@@ -445,7 +446,7 @@ export default function ProfileManagement({ darkMode }) {
           />
           <p className={`text-xs ${textSecondary}`}>
             {selectedAvatarFile
-              ? `Selected: ${selectedAvatarFile.name} (will save to Backblaze B2)`
+              ? `Selected: ${selectedAvatarFile.name}`
               : 'Drag & drop or click to upload profile image'}
           </p>
         </div>
@@ -477,7 +478,7 @@ export default function ProfileManagement({ darkMode }) {
             {profile.email && !emailValid && <p className={errorText}>Enter a valid email address.</p>}
           </div>
           <div>
-            <label className={`text-xs font-medium ${textSecondary}`}>Phone Number</label>
+            <label className={`text-xs font-medium ${textSecondary}`}>Mobile Number</label>
             <div className="mt-1">
               <PhoneInputField
                 value={phone}
@@ -516,7 +517,7 @@ export default function ProfileManagement({ darkMode }) {
               </button>
             </div>
             <p className={`text-xs mt-1 ${textSecondary}`}>
-              Firebase requires a recent sign-in before changing your email.
+              For your security, your current password is needed to change your email.
             </p>
           </div>
         )}
@@ -543,9 +544,11 @@ export default function ProfileManagement({ darkMode }) {
         {/* Change Password Form */}
         <form onSubmit={handleChangePassword} className={`p-6 rounded-2xl border shadow-xs space-y-4 ${cardBg}`}>
           <h2 className="text-lg font-bold">Security</h2>
-          <p className={`text-xs ${textSecondary}`}>
-            Last password change: <span className="font-semibold">{formatDate(profile.passwordUpdatedAt)}</span>
-          </p>
+          {profile.passwordUpdatedAt && (
+            <p className={`text-xs ${textSecondary}`}>
+              Last password change: <span className="font-semibold">{formatDate(profile.passwordUpdatedAt)}</span>
+            </p>
+          )}
 
           <div>
             <label className={`text-xs font-medium ${textSecondary}`}>Current Password</label>
@@ -630,7 +633,7 @@ export default function ProfileManagement({ darkMode }) {
             </div>
             <div>
               <dt className={`text-xs uppercase tracking-wider font-semibold ${textSecondary}`}>Last Login</dt>
-              <dd className="mt-1">{auth.currentUser?.metadata?.lastSignInTime ? new Date(auth.currentUser.metadata.lastSignInTime).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}</dd>
+              <dd className="mt-1">{formatDate(profile.lastLogin || auth.currentUser?.metadata?.lastSignInTime)}</dd>
             </div>
             <div>
               <dt className={`text-xs uppercase tracking-wider font-semibold ${textSecondary}`}>Last Updated</dt>

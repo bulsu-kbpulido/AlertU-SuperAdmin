@@ -139,7 +139,7 @@ export default function AdminManagement({ darkMode }) {
   const [activeTab, setActiveTab] = useState('active'); // 'active' | 'archived'
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 5;
+  const itemsPerPage = 10;
 
   // Real-time online presences map (uid/adminId -> boolean)
   const [onlinePresences, setOnlinePresences] = useState({});
@@ -309,10 +309,10 @@ export default function AdminManagement({ darkMode }) {
       await logMovement({
         action: nextIsDisabled ? 'DISABLE_ADMIN_ACCOUNT' : 'ENABLE_ADMIN_ACCOUNT',
         target: admin.adminId || admin.email || adminId,
-        details: `${nextIsDisabled ? 'Disabled' : 'Reactivated'} access for administrator ${admin.name || admin.email}`,
+        details: `${nextIsDisabled ? 'Deactivated' : 'Reactivated'} access for administrator ${admin.name || admin.email}`,
       });
 
-      toast.success(`Administrator account ${nextIsDisabled ? 'disabled' : 'enabled'} successfully.`);
+      toast.success(`Administrator account ${nextIsDisabled ? 'deactivated' : 'reactivated'} successfully.`);
       setToggleDialog({ isOpen: false, admin: null });
     } catch (err) {
       console.error('Failed to toggle admin status:', err);
@@ -380,7 +380,7 @@ export default function AdminManagement({ darkMode }) {
     { label: 'Online', value: 'Online' },
     { label: 'Offline', value: 'Offline' },
     { label: 'Active', value: 'Active' },
-    { label: 'Disabled', value: 'Disabled' },
+    { label: 'Deactivated', value: 'Disabled' }, // value stays 'Disabled' (used by the filter logic)
   ];
 
   return (
@@ -463,7 +463,7 @@ export default function AdminManagement({ darkMode }) {
             <input
               type="text"
               aria-label="Search administrators"
-              placeholder="Search by Admin ID, full name, email, or phone..."
+              placeholder="Search by Admin ID, full name, email, or mobile number..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full rounded-md border border-slate-300 bg-white dark:border-slate-700 dark:bg-slate-800 dark:text-white pl-9 pr-4 py-2 text-sm placeholder-slate-400 dark:placeholder-slate-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
@@ -520,7 +520,7 @@ export default function AdminManagement({ darkMode }) {
                   <th className="px-6 py-4">Admin ID</th>
                   <th className="px-6 py-4">Administrator</th>
                   <th className="px-6 py-4">Presence</th>
-                  <th className="px-6 py-4">Phone Number</th>
+                  <th className="px-6 py-4">Mobile Number</th>
                   <th className="px-6 py-4">Status</th>
                   <th className="px-6 py-4 text-right">Actions</th>
                 </tr>
@@ -576,7 +576,7 @@ export default function AdminManagement({ darkMode }) {
                           <PresenceBadge isActive={isOnline} />
                         </td>
 
-                        {/* Phone Number */}
+                        {/* Mobile Number */}
                         <td className="px-6 py-4 text-xs font-medium text-slate-600 dark:text-slate-300">
                           {admin.phone || '—'}
                         </td>
@@ -591,7 +591,7 @@ export default function AdminManagement({ darkMode }) {
                           ) : (
                             <span className="inline-flex items-center gap-1 rounded-full border border-red-200 bg-red-50 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-400 px-2.5 py-0.5 text-xs font-semibold text-red-700">
                               <ShieldAlert className="h-3 w-3" />
-                              Disabled
+                              Deactivated
                             </span>
                           )}
                         </td>
@@ -615,11 +615,11 @@ export default function AdminManagement({ darkMode }) {
                               <Edit3 className="h-3.5 w-3.5" /> Edit
                             </button>
 
-                            {/* Enable/Disable Toggle */}
+                            {/* Deactivate/Reactivate Toggle */}
                             <button
                               onClick={() => triggerStatusConfirm(admin)}
                               disabled={isActionBusy}
-                              className={`inline-flex items-center gap-1 w-[82px] justify-center rounded-md border px-2.5 py-1.5 text-xs font-medium shadow-sm transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer ${
+                              className={`inline-flex items-center gap-1 w-[108px] justify-center rounded-md border px-2.5 py-1.5 text-xs font-medium shadow-sm transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer ${
                                 isAccountEnabled
                                   ? 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-400 dark:hover:bg-amber-900/60'
                                   : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-400 dark:hover:bg-emerald-900/60'
@@ -629,11 +629,11 @@ export default function AdminManagement({ darkMode }) {
                                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
                               ) : isAccountEnabled ? (
                                 <>
-                                  <UserX className="h-3.5 w-3.5" /> Disable
+                                  <UserX className="h-3.5 w-3.5" /> Deactivate
                                 </>
                               ) : (
                                 <>
-                                  <UserCheck className="h-3.5 w-3.5" /> Enable
+                                  <UserCheck className="h-3.5 w-3.5" /> Reactivate
                                 </>
                               )}
                             </button>
@@ -724,7 +724,7 @@ export default function AdminManagement({ darkMode }) {
         onRefresh={() => handleRefresh(true)}
       />
 
-      {/* Enable / Disable Confirmation Dialog */}
+      {/* Deactivate / Reactivate Confirmation Dialog */}
       <StatusToggleAlertDialog
         isOpen={toggleDialog.isOpen}
         admin={toggleDialog.admin}

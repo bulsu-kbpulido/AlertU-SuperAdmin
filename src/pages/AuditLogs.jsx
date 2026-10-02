@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Terminal, Search, Copy, Check, ChevronLeft, ChevronRight, FileText, Filter, Shield, AlertTriangle, Users, Share2, Radio } from 'lucide-react';
+import { Terminal, Search, Copy, Check, ChevronLeft, ChevronRight, FileText, Filter, Shield, AlertTriangle, Users, Share2, Radio, Bug } from 'lucide-react';
 import { db } from '../firebase';
-import { collection, query, limit, onSnapshot } from 'firebase/firestore';
+import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
 import { onAuditLogReceived } from '../socket';
 import { 
   isMeaningfulAdminActivity, 
@@ -17,6 +17,25 @@ const parseDate = (val) => {
   return isNaN(d.getTime()) ? null : d;
 };
 
+// Collapse duplicate entries of the same event: same eventId, or same
+// action + actor + target within the same second (Firestore snapshot and the
+// socket push can both deliver the same log with different ids).
+const dedupeLogs = (list) => {
+  const seenIds = new Set();
+  const seenContent = new Set();
+  return list.filter((log) => {
+    const t = parseDate(log.createdAt) || parseDate(log.timestamp);
+    const idKey = log.eventId || log.id;
+    const contentKey = t
+      ? `${log.action}|${log.adminId || ''}|${log.target || log.targetUser || ''}|${Math.floor(t.getTime() / 1000)}`
+      : null;
+    if ((idKey && seenIds.has(idKey)) || (contentKey && seenContent.has(contentKey))) return false;
+    if (idKey) seenIds.add(idKey);
+    if (contentKey) seenContent.add(contentKey);
+    return true;
+  });
+};
+
 const CATEGORIES = [
   { id: 'meaningful', label: 'Admin Activities', icon: FileText },
   { id: 'INCIDENTS', label: 'Incidents & Dispatches', icon: AlertTriangle },
@@ -24,12 +43,14 @@ const CATEGORIES = [
   { id: 'ADMIN_MANAGEMENT', label: 'Admin Accounts', icon: Shield },
   { id: 'EXPORTS_AND_SHARING', label: 'Exports & Sharing', icon: Share2 },
   { id: 'AUTH', label: 'Sign-In & Auth', icon: Shield },
+  { id: 'SYSTEM_ERRORS', label: 'System Errors', icon: Bug },
 ];
 
 export default function AuditLogs({ darkMode }) {
   useDocumentTitle('Audit Logs – AlertU');
 
   const [logs, setLogs] = useState([]);
+  const [systemErrors, setSystemErrors] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('meaningful');
@@ -39,7 +60,9 @@ export default function AuditLogs({ darkMode }) {
 
   // 1. Real-time Firestore sync for Audit Logs
   useEffect(() => {
-    const logsQuery = query(collection(db, 'audit_logs'), limit(300));
+    // Newest first. Without orderBy, Firestore returns an arbitrary 300 docs (by document ID),
+    // so recent logs went missing after a refresh.
+    const logsQuery = query(collection(db, 'audit_logs'), orderBy('createdAt', 'desc'), limit(300));
     const unsubscribe = onSnapshot(
       logsQuery,
       (snapshot) => {
@@ -56,6 +79,27 @@ export default function AuditLogs({ darkMode }) {
         console.error('Error fetching audit logs from Firestore:', error);
         setLoading(false);
       }
+    );
+    return () => unsubscribe();
+  }, []);
+
+  // 1b. System errors recorded by the Super Admin app (superadmin_audit_logs, level = ERROR)
+  useEffect(() => {
+    const errorsQuery = query(
+      collection(db, 'superadmin_audit_logs'),
+      orderBy('createdAt', 'desc'),
+      limit(200)
+    );
+    const unsubscribe = onSnapshot(
+      errorsQuery,
+      (snapshot) => {
+        setSystemErrors(
+          snapshot.docs
+            .map((d) => ({ id: d.id, ...d.data() }))
+            .filter((l) => l.level === 'ERROR' || String(l.action || '').startsWith('SYSTEM_ERROR'))
+        );
+      },
+      (error) => console.error('Error fetching system errors:', error)
     );
     return () => unsubscribe();
   }, []);
@@ -90,12 +134,16 @@ export default function AuditLogs({ darkMode }) {
     return `⚡ [Admin Movement Captured] [ID: ${adminId}] ${adminName} → ${action} (${target})`;
   };
 
+  const uniqueLogs = useMemo(() => dedupeLogs(logs), [logs]);
+
   // Filter logs based on category and search query
   const filteredLogs = useMemo(() => {
-    let result = logs;
+    let result = selectedCategory === 'SYSTEM_ERRORS' ? systemErrors : uniqueLogs;
 
     // 1. Category Filtering
-    if (selectedCategory === 'meaningful') {
+    if (selectedCategory === 'SYSTEM_ERRORS') {
+      // already limited to system errors
+    } else if (selectedCategory === 'meaningful') {
       result = result.filter(isMeaningfulAdminActivity);
     } else {
       result = result.filter((log) => getActionCategory(log) === selectedCategory);
@@ -126,7 +174,7 @@ export default function AuditLogs({ darkMode }) {
     }
 
     return result;
-  }, [logs, selectedCategory, searchTerm]);
+  }, [uniqueLogs, systemErrors, selectedCategory, searchTerm]);
 
   // Reset to first page when search query or category changes
   useEffect(() => {
@@ -261,7 +309,8 @@ export default function AuditLogs({ darkMode }) {
               const isCopied = copiedId === logId;
               const logDate = parseDate(log.createdAt) || parseDate(log.timestamp);
               const isRecent = logDate && (Date.now() - logDate.getTime() < 5 * 60 * 1000);
-              const severity = log.metadata?.verifiedSeverity;
+              // Severity only makes sense for incident-related actions
+              const severity = getActionCategory(log) === 'INCIDENTS' ? log.metadata?.verifiedSeverity : null;
               const reportTitle = log.metadata?.reportTitle;
               const agencies = Array.isArray(log.metadata?.selectedAgencies) ? log.metadata.selectedAgencies : [];
 
@@ -294,6 +343,11 @@ export default function AuditLogs({ darkMode }) {
                         {isRecent && (
                           <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 uppercase tracking-wider">
                             Live
+                          </span>
+                        )}
+                        {String(log.action || '').toUpperCase().startsWith('SYSTEM_ERROR') && (
+                          <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20 uppercase tracking-wider">
+                            Error
                           </span>
                         )}
                         {severity && (

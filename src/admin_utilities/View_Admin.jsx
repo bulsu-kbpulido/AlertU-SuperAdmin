@@ -148,7 +148,7 @@ export default function View_Admin({ isOpen, admin: propAdmin, onClose, isOnline
             <div className="space-y-1">
               <div className="flex items-center gap-2 text-slate-400 dark:text-slate-500 text-xs font-semibold uppercase tracking-wider">
                 <Phone className="h-4 w-4 text-blue-500" />
-                Phone Number
+                Mobile Number
               </div>
               <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">
                 {admin.phone || '—'}

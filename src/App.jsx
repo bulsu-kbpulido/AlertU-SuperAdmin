@@ -7,6 +7,10 @@ import { useIdleTimer } from './hooks/useIdleTimer';
 import { resolveSuperAdminDocId } from './utils/superAdminDoc';
 import { registerSocketUser, disconnectSocketUser } from './socket';
 import { useAuditLog } from './useAuditLog';
+import { useGlobalErrorLogging } from './hooks/useGlobalErrorLogging';
+import { MantineProvider } from '@mantine/core';
+import '@mantine/core/styles.css';
+import ErrorBoundary from './components/ErrorBoundary';
 import LoginPage from './LoginPage';
 import Sidebar from './components/Sidebar';
 import Navbar from './components/Navbar';
@@ -35,7 +39,8 @@ export default function App() {
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [sessionTimeoutMinutes, setSessionTimeoutMinutes] = useState(0);
 
-  const { logLoginSuccess } = useAuditLog();
+  const { logLoginSuccess, logSystemError } = useAuditLog();
+  useGlobalErrorLogging(); // records uncaught errors under Audit Logs -> System Errors
   const hasLoggedSessionRef = useRef(false);
 
   // Apply dark class to <html> root element whenever darkMode changes
@@ -48,6 +53,18 @@ export default function App() {
       localStorage.setItem('theme', 'light');
     }
   }, [darkMode]);
+
+  // While signed in, the content area (<main>) does the scrolling, so turn off the
+  // page-level scrollbar to avoid a duplicate one. Login page keeps normal scrolling.
+  useEffect(() => {
+    if (!user) return undefined;
+    document.documentElement.classList.add('overflow-hidden');
+    document.body.classList.add('overflow-hidden');
+    return () => {
+      document.documentElement.classList.remove('overflow-hidden');
+      document.body.classList.remove('overflow-hidden');
+    };
+  }, [user]);
 
   // 🏷️ Dynamic Browser Tab Title Listener for SuperAdmin
   useEffect(() => {
@@ -166,7 +183,7 @@ export default function App() {
   const renderPage = () => {
     switch (activePage) {
       case 'dashboard':
-        return <Dashboard darkMode={darkMode} />;
+        return <Dashboard darkMode={darkMode} setActivePage={setActivePage} />;
       case 'admins':
         return <AdminManagement darkMode={darkMode} />;
       case 'profile':
@@ -207,7 +224,8 @@ export default function App() {
   }
 
   return (
-    <div className={`flex h-screen w-full overflow-hidden transition-colors duration-200 ${
+    <MantineProvider forceColorScheme={darkMode ? 'dark' : 'light'}>
+    <div className={`fixed inset-0 flex w-full overflow-hidden transition-colors duration-200 ${
       darkMode ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'
     }`}>
       
@@ -233,11 +251,14 @@ export default function App() {
         />
 
         <main className="flex-1 overflow-y-auto p-4 md:p-6">
-          {renderPage()}
+          <ErrorBoundary darkMode={darkMode} resetKey={activePage} onError={logSystemError}>
+            {renderPage()}
+          </ErrorBoundary>
         </main>
 
       </div>
 
     </div>
+    </MantineProvider>
   );
 }

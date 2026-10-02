@@ -2,6 +2,9 @@ import { useCallback } from 'react';
 import { collection, doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from './firebase';
 
+// Module-level throttle state for logSystemError
+const errorThrottle = { last: {}, recent: [] };
+
 /**
  * Helper to safely extract string ID from targets
  */
@@ -370,6 +373,73 @@ export const useAuditLog = ({
   );
 
   // ====================================================
+  // 🚨 SYSTEM ERROR LOGGING
+  // ====================================================
+
+  /**
+   * Records an application/system error so it shows up under
+   * Audit Logs -> "System Errors". Safe to call from any catch block:
+   *   logSystemError(err, { source: 'AdminManagement', operation: 'sync admin records' });
+   *
+   * - Never logs passwords/tokens (message + stack are truncated and only the
+   *   fields below are stored).
+   * - Throttled so an error loop cannot flood Firestore.
+   * - Never throws; if logging itself fails it only writes to console.
+   */
+  const logSystemError = useCallback(
+    async (error, context = {}) => {
+      try {
+        const message = String(error?.message || error || 'Unknown error').slice(0, 300);
+
+        // Ignore benign browser noise and errors caused by the logger itself
+        if (/ResizeObserver loop/i.test(message) || message === 'Script error.') return null;
+        if (/superadmin_audit_logs/i.test(message)) return null;
+
+        // Throttle: same error once per 30s, max 5 error logs per minute
+        const now = Date.now();
+        const key = `${context.source || ''}|${message}`;
+        if (errorThrottle.last[key] && now - errorThrottle.last[key] < 30000) return null;
+        errorThrottle.recent = errorThrottle.recent.filter((t) => now - t < 60000);
+        if (errorThrottle.recent.length >= 5) return null;
+        errorThrottle.last[key] = now;
+        errorThrottle.recent.push(now);
+
+        const eventId = `super_err_${now}_${Math.random().toString(36).substring(2, 7)}`;
+        const payload = {
+          eventId,
+          action: 'SYSTEM_ERROR',
+          level: 'ERROR',
+          target: context.source || 'super-admin-web',
+          actorRole: 'system',
+          adminId: 'SYSTEM',
+          adminName: 'System',
+          details: message,
+          consoleLogMessage: `🚨 [System Error] ${context.source || 'super-admin-web'}: ${message}`,
+          metadata: {
+            source: context.source || 'super-admin-web',
+            operation: context.operation || null,
+            errorName: error?.name || null,
+            errorCode: error?.code || null,
+            stack: error?.stack ? String(error.stack).slice(0, 1000) : null,
+            page: typeof window !== 'undefined' ? window.location.pathname : null,
+            reportedByUid: auth.currentUser?.uid || null,
+            occurredAt: new Date().toISOString(),
+          },
+          createdAt: serverTimestamp(),
+          timestamp: new Date().toISOString(),
+        };
+
+        await setDoc(doc(db, 'superadmin_audit_logs', eventId), payload);
+        return payload;
+      } catch (loggingError) {
+        console.error('Failed to record system error:', loggingError?.message);
+        return null;
+      }
+    },
+    []
+  );
+
+  // ====================================================
   // 🔗 SHARED LINK & EXPORT HELPERS
   // (ported from the Admin panel's Send Reports / Dashboard export tools)
   // ====================================================
@@ -457,6 +527,9 @@ export const useAuditLog = ({
     // Authentication Audit Helpers
     logLoginSuccess,
     logLoginFailed,
+
+    // System error logging
+    logSystemError,
 
     // Shared Link & Export Helpers
     logGenerateSharedLink,

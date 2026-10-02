@@ -30,7 +30,7 @@ export default function ArchivedAdminsTable({
 
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 5;
+  const itemsPerPage = 10;
 
   // Dialog states
   const [targetAdmin, setTargetAdmin] = useState(null);

@@ -117,7 +117,7 @@ export default function Edit_Admin({ isOpen, admin, onClose, onRefresh }) {
       return;
     }
     if (phone && !phoneValid) {
-      toast.error('Enter a valid phone number.');
+      toast.error('Enter a valid mobile number.');
       return;
     }
 
@@ -253,7 +253,7 @@ export default function Edit_Admin({ isOpen, admin, onClose, onRefresh }) {
             {/* Phone Number */}
             <div>
               <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                Phone Number
+                Mobile Number
               </label>
               <div className="mt-1.5">
                 <PhoneInput
