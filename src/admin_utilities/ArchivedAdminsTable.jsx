@@ -1,3 +1,5 @@
+import useNewRows from '../hooks/useNewRows';
+import NewBadge from '../components/NewBadge';
 import React, { useState, useMemo } from 'react';
 import { 
   RotateCcw, 
@@ -54,6 +56,10 @@ export default function ArchivedAdminsTable({
   }, [admins, searchTerm]);
 
   const totalPages = Math.ceil(filteredAdmins.length / itemsPerPage) || 1;
+
+  const { isNew, markSeen } = useNewRows('admins-archived', admins, {
+    getTime: (item) => item.archivedAt || item.updatedAt || item.createdAt,
+  });
 
   const paginatedAdmins = useMemo(() => {
     const start = (currentPage - 1) * itemsPerPage;
@@ -233,7 +239,7 @@ export default function ArchivedAdminsTable({
                 const isSelected = selectedIds.has(admin.id);
                 return (
                   <tr
-                    key={admin.id}
+                    key={admin.id} onClickCapture={() => markSeen(admin)}
                     className={`hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors ${
                       isSelected ? 'bg-blue-50/30 dark:bg-blue-950/20' : ''
                     }`}
@@ -251,7 +257,7 @@ export default function ArchivedAdminsTable({
                     <td className="px-6 py-4">
                       <span className="inline-block rounded-md bg-slate-100 dark:bg-slate-800 px-2.5 py-1 text-xs font-mono font-bold tracking-wide text-slate-800 dark:text-slate-100 border border-slate-200/80 dark:border-slate-700/80">
                         {admin.adminId || 'ID Pending'}
-                      </span>
+                      </span> {isNew(admin) && <NewBadge className="ml-2" />}
                     </td>
 
                     {/* Full Name & Avatar */}

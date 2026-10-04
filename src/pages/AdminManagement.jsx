@@ -1,3 +1,5 @@
+import useNewRows from '../hooks/useNewRows';
+import NewBadge from '../components/NewBadge';
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -367,6 +369,10 @@ export default function AdminManagement({ darkMode }) {
     }
   }, [totalPages, currentPage]);
 
+  const { isNew, markSeen } = useNewRows('admins', admins, {
+    getTime: (item) => item.createdAt || item.created,
+  });
+
   const paginatedAdmins = useMemo(() => {
     const start = (currentPage - 1) * itemsPerPage;
     return filteredAdmins.slice(start, start + itemsPerPage);
@@ -546,12 +552,12 @@ export default function AdminManagement({ darkMode }) {
                     );
 
                     return (
-                      <tr key={admin.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors">
+                      <tr key={admin.id} onClickCapture={() => markSeen(admin)} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors">
                         {/* Admin ID */}
                         <td className="px-6 py-4">
                           <span className="inline-block rounded-md bg-slate-100 dark:bg-slate-800 px-2.5 py-1 text-sm font-mono font-bold tracking-wide text-slate-800 dark:text-slate-100 border border-slate-200/80 dark:border-slate-700/80">
                             {admin.adminId || 'ID Pending'}
-                          </span>
+                          </span> {isNew(admin) && <NewBadge className="ml-2" />}
                         </td>
 
                         {/* Full Name & Avatar */}

@@ -1,3 +1,5 @@
+import useNewRows from '../hooks/useNewRows';
+import NewBadge from '../components/NewBadge';
 import { useState, useEffect, useMemo } from 'react';
 import { db } from '../firebase';
 import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
@@ -134,6 +136,10 @@ export default function AuditLogs({ darkMode }) {
   };
 
   const uniqueLogs = useMemo(() => dedupeLogs(logs), [logs]);
+
+  const { isNew, markSeen } = useNewRows('audit-logs', logs, {
+    getTime: (item) => item.createdAt || item.timestamp,
+  });
 
   // Filter logs based on category and search query
   const filteredLogs = useMemo(() => {
@@ -307,7 +313,7 @@ export default function AuditLogs({ darkMode }) {
 
               return (
                 <div
-                  key={logId}
+                  key={logId} onClickCapture={() => markSeen(log)}
                   className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 transition-colors ${rowHover}`}
                 >
                   {/* Log Content */}
@@ -331,6 +337,7 @@ export default function AuditLogs({ darkMode }) {
                         <span className={`text-sm font-bold ${darkMode ? 'text-white' : 'text-slate-900'}`}>
                           {actionTitle}
                         </span>
+                        {isNew(log) && <NewBadge />}
                         {isRecent && (
                           <span className="px-1.5 py-0.2 rounded text-xs font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 uppercase tracking-wider">
                             Live

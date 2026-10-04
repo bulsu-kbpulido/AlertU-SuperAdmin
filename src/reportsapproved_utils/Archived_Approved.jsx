@@ -1,3 +1,5 @@
+import useNewRows from '../hooks/useNewRows';
+import NewBadge from '../components/NewBadge';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
@@ -188,6 +190,10 @@ export default function Archived_Approved({ onRestoreSuccess, onCountChange }) {
       setCurrentPage(totalPages);
     }
   }, [totalPages, currentPage]);
+
+  const { isNew, markSeen } = useNewRows('reports-approved-archive', archivedReports, {
+    getTime: (item) => item.timestamp || item.archivedAt || item.updatedAt,
+  });
 
   const paginatedReports = useMemo(() => {
     const start = (currentPage - 1) * itemsPerPage;
@@ -510,7 +516,7 @@ export default function Archived_Approved({ onRestoreSuccess, onCountChange }) {
 
                 return (
                   <motion.tr
-                    key={reportId}
+                    key={reportId} onClickCapture={() => markSeen(report)}
                     onDoubleClick={() => handleRowDoubleClick(report)}
                     animate={{
                       backgroundColor: isSelected ? 'rgba(59, 130, 246, 0.08)' : 'rgba(0,0,0,0)',
@@ -536,7 +542,7 @@ export default function Archived_Approved({ onRestoreSuccess, onCountChange }) {
                     </td>
 
                     <td className="px-5 py-4 font-medium text-slate-700 dark:text-slate-300">
-                      {displayId}
+                      {displayId}{isNew(report) && <NewBadge className="ml-2" />}
                     </td>
 
                     <td className="px-5 py-4">
