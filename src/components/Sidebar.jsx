@@ -21,6 +21,33 @@ import {
 } from 'lucide-react';
 import { signOut } from 'firebase/auth';
 import { auth } from '../firebase';
+import useNewItemBadges from '../hooks/useNewItemBadges';
+
+const isPendingReport = (r) =>
+  !r.isDuplicate &&
+  !r.isResolved &&
+  !r.isArchived &&
+  !['duplicate', 'resolved', 'verified', 'dispatched', 'rejected', 'archived'].includes(r.status);
+
+const reportTime = (r) => r.timestamp || r.submittedAt || r.createdAt || r.reportTimestamp;
+
+// Sidebar items that show a red badge when something new arrives
+const NEW_ITEM_SOURCES = [
+  {
+    pageId: 'logs',
+    collectionName: 'audit_logs',
+    orderByField: 'createdAt',
+    max: 100,
+    getTime: (log) => log.createdAt || log.timestamp,
+  },
+  {
+    pageId: 'report-management',
+    collectionName: 'reports',
+    max: 100,
+    include: isPendingReport,
+    getTime: reportTime,
+  },
+];
 import toast from 'react-hot-toast';
 
 export default function Sidebar({
@@ -32,6 +59,8 @@ export default function Sidebar({
   setIsOpen,
   onSignOut,
 }) {
+  const newCounts = useNewItemBadges(NEW_ITEM_SOURCES, activePage, auth.currentUser?.uid);
+
   const menuItems = [
     { id: 'admins', label: 'Admin Management', icon: Users },
     { id: 'logs', label: 'Audit Logs', icon: FileText },
@@ -218,6 +247,7 @@ export default function Sidebar({
           {menuItems.map((item) => {
             const Icon = item.icon;
             const isActive = activePage === item.id;
+            const count = newCounts[item.id] || 0;
 
             return (
               <button
@@ -242,6 +272,11 @@ export default function Sidebar({
                 />
 
                 <span className="truncate whitespace-nowrap">{item.label}</span>
+                {count > 0 && (
+                  <span className="ml-auto inline-flex min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 py-0.5 text-xs font-bold leading-none text-white">
+                    {count > 99 ? '99+' : count}
+                  </span>
+                )}
               </button>
             );
           })}
@@ -250,6 +285,7 @@ export default function Sidebar({
           {portedAdminItems.map((item) => {
             const Icon = item.icon;
             const isActive = activePage === item.id;
+            const count = newCounts[item.id] || 0;
 
             return (
               <button
@@ -274,6 +310,11 @@ export default function Sidebar({
                 />
 
                 <span className="truncate whitespace-nowrap">{item.label}</span>
+                {count > 0 && (
+                  <span className="ml-auto inline-flex min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 py-0.5 text-xs font-bold leading-none text-white">
+                    {count > 99 ? '99+' : count}
+                  </span>
+                )}
               </button>
             );
           })}
