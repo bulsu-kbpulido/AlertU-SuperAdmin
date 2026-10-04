@@ -115,7 +115,7 @@ export default function Navbar({ activePage, setActivePage, isOpen, setIsOpen })
               <span className="text-sm sm:text-base font-medium leading-snug text-slate-900 dark:text-slate-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors truncate max-w-[140px] sm:max-w-[200px]">
                 {displayName}
               </span>
-              <span className="text-[11px] font-normal text-slate-500 dark:text-slate-400">
+              <span className="text-xs font-normal text-slate-500 dark:text-slate-400">
                 Super Administrator
               </span>
             </div>
@@ -130,7 +130,7 @@ export default function Navbar({ activePage, setActivePage, isOpen, setIsOpen })
             <div className="inline-flex items-center gap-1.5 text-blue-600 dark:text-blue-400 bg-blue-50/80 dark:bg-blue-950/50 px-2.5 py-1 rounded-md border border-blue-200/60 dark:border-blue-900/40">
               <Clock className="h-3.5 w-3.5 shrink-0 animate-pulse" />
               <span className="font-mono font-semibold tracking-tight">{formattedTime}</span>
-              <span className="text-[10px] font-bold tracking-wider text-blue-500/80 dark:text-blue-400/80 uppercase ml-0.5">
+              <span className="text-xs font-bold tracking-wider text-blue-500/80 dark:text-blue-400/80 uppercase ml-0.5">
                 PST
               </span>
             </div>

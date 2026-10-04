@@ -780,11 +780,11 @@ export default function Alert_Management() {
       {/* -------------------------------------------------------------------- */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200/80 dark:border-slate-800/80 pb-5">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-            Dashboard Monitoring
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
+            Announcements
           </h1>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-            Real-time overview of incident reports and active alerts
+            Create, schedule, and manage announcements for citizens
           </p>
         </div>
       </div>
@@ -980,7 +980,7 @@ export default function Alert_Management() {
                         <div className="flex-1 min-w-0 space-y-2">
                           {/* Title + Status Badge */}
                           <div className="flex flex-wrap items-center gap-2">
-                            <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white truncate">
+                            <h3 className="text-sm font-semibold text-slate-900 dark:text-white truncate">
                               {item.title}
                             </h3>
                             {renderStatusBadge(item.status, item.expiresAt)}
@@ -1154,7 +1154,7 @@ export default function Alert_Management() {
 
                           <div className="space-y-1.5">
                             <div className="flex flex-wrap items-center gap-2">
-                              <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
+                              <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
                                 {item.title}
                               </h3>
                               {renderStatusBadge(item.status, item.expiresAt)}
@@ -1337,7 +1337,7 @@ export default function Alert_Management() {
                         <button
                           type="button"
                           onClick={handleSelectAllBarangays}
-                          className="text-[11px] font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 hover:underline cursor-pointer"
+                          className="text-xs font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 hover:underline cursor-pointer"
                         >
                           Select All
                         </button>
@@ -1345,7 +1345,7 @@ export default function Alert_Management() {
                         <button
                           type="button"
                           onClick={handleClearAllBarangays}
-                          className="text-[11px] font-semibold text-slate-500 hover:text-slate-700 dark:text-slate-400 hover:underline cursor-pointer"
+                          className="text-xs font-semibold text-slate-500 hover:text-slate-700 dark:text-slate-400 hover:underline cursor-pointer"
                         >
                           Clear
                         </button>

@@ -234,7 +234,7 @@ export default function Create_Admin({ isOpen, onClose, onRefresh }) {
                 className="hidden"
                 onChange={handleAvatarUpload}
               />
-              <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 mt-2">
+              <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mt-2">
                 {selectedAvatarFile ? selectedAvatarFile.name : 'Click or drag & drop profile picture'}
               </p>
             </div>
@@ -331,7 +331,7 @@ export default function Create_Admin({ isOpen, onClose, onRefresh }) {
                       style={{ width: `${(strength.score / 4) * 100}%` }}
                     />
                   </div>
-                  <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 mt-1 block">
+                  <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 mt-1 block">
                     Password Strength: {strength.label}
                   </span>
                 </div>

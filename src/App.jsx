@@ -89,7 +89,7 @@ export default function App() {
         document.title = 'Create Report – AlertU';
         break;
       case 'alerts':
-        document.title = 'Alerts – AlertU';
+        document.title = 'Announcements – AlertU';
         break;
       case 'send-reports':
         document.title = 'Dispatch Report – AlertU';

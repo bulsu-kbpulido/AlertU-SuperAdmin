@@ -190,7 +190,7 @@ export default function Edit_Admin({ isOpen, admin, onClose, onRefresh }) {
             <div>
               <h2 className="text-lg font-bold text-slate-900 dark:text-white">Edit Administrator Profile</h2>
               <div className="flex items-center gap-2 mt-0.5">
-                <span className="font-mono text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                <span className="font-mono text-xs font-semibold text-slate-500 dark:text-slate-400">
                   {admin.adminId || admin.id}
                 </span>
               </div>
@@ -230,7 +230,7 @@ export default function Edit_Admin({ isOpen, admin, onClose, onRefresh }) {
                 className="hidden"
                 onChange={handleAvatarUpload}
               />
-              <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 mt-2">
+              <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mt-2">
                 {selectedAvatarFile ? selectedAvatarFile.name : 'Click to change profile image'}
               </p>
             </div>

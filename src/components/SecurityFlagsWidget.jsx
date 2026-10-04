@@ -258,16 +258,16 @@ export default function SecurityFlagsWidget({ admins, auditLogs, loading, darkMo
             return (
               <div key={f.id} className={`p-2.5 rounded-lg border-l-4 ${tone.row}`}>
                 <div className="flex items-center justify-between gap-2">
-                  <span className={`text-[11px] font-bold flex items-center gap-1.5 ${tone.label}`}>
+                  <span className={`text-xs font-bold flex items-center gap-1.5 ${tone.label}`}>
                     <Icon className="w-3.5 h-3.5" />
                     {t.label}
                   </span>
-                  <span className="text-[11px] font-semibold text-slate-400 shrink-0">{timeAgo(f.at)}</span>
+                  <span className="text-xs font-semibold text-slate-400 shrink-0">{timeAgo(f.at)}</span>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap mt-1">
                   <span className="text-sm font-bold truncate">{f.name}</span>
                   {f.code && (
-                    <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-slate-200/70 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                    <span className="font-mono text-xs px-1.5 py-0.5 rounded bg-slate-200/70 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
                       {f.code}
                     </span>
                   )}
@@ -278,7 +278,7 @@ export default function SecurityFlagsWidget({ admins, auditLogs, loading, darkMo
                     <button
                       type="button"
                       onClick={() => onReview(f)}
-                      className={`text-[11px] font-bold px-2.5 py-1 rounded-md border shrink-0 transition-colors ${
+                      className={`text-xs font-bold px-2.5 py-1 rounded-md border shrink-0 transition-colors ${
                         darkMode
                           ? 'border-slate-700 hover:bg-slate-800'
                           : 'border-slate-300 bg-white hover:bg-slate-100'

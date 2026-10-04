@@ -54,7 +54,7 @@ export default function Sidebar({
     { id: 'create-reports', label: 'Create Report', icon: FilePlus2 },
     { id: 'send-reports', label: 'Dispatch Report', icon: Send },
     { id: 'report-management', label: 'Verify Reports', icon: FolderKanban },
-    { id: 'alerts', label: 'Alerts', icon: Siren },
+    { id: 'alerts', label: 'Announcements', icon: Siren },
     { id: 'citizen-management', label: 'Manage Citizens', icon: UserCircle2 },
   ];
 
@@ -151,7 +151,7 @@ export default function Sidebar({
             />
           </div>
 
-          <span className="inline-flex items-center gap-1 font-bold uppercase tracking-wider text-[10px] px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400 border border-blue-200/60 dark:border-blue-800/40 shrink-0">
+          <span className="inline-flex items-center gap-1 font-bold uppercase tracking-wider text-xs px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400 border border-blue-200/60 dark:border-blue-800/40 shrink-0">
             <ShieldCheck className="h-3 w-3" />
             Super Admin
           </span>
@@ -195,7 +195,7 @@ export default function Sidebar({
                   <button
                     key={sub.id}
                     onClick={() => handleItemClick(sub.id)}
-                    className={`group relative flex w-full items-center gap-2.5 rounded-xl px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider transition-all outline-none duration-200 cursor-pointer overflow-hidden ${
+                    className={`group relative flex w-full items-center gap-2.5 rounded-xl px-3 py-1.5 text-xs font-bold uppercase tracking-wider transition-all outline-none duration-200 cursor-pointer overflow-hidden ${
                       isSubActive
                         ? 'text-blue-600 dark:text-blue-400'
                         : 'text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300'

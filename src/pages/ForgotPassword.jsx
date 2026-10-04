@@ -294,7 +294,7 @@ export default function ForgotPassword({ onBackToLogin }) {
             />
           </div>
 
-          <span className="inline-flex items-center gap-1 font-bold uppercase tracking-wider text-[10px] px-2.5 py-1 rounded-md bg-blue-50 text-blue-700 border border-blue-200/60 shrink-0">
+          <span className="inline-flex items-center gap-1 font-bold uppercase tracking-wider text-xs px-2.5 py-1 rounded-md bg-blue-50 text-blue-700 border border-blue-200/60 shrink-0">
             <ShieldCheck className="h-3.5 w-3.5" />
             Super Admin
           </span>

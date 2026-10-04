@@ -1,5 +1,4 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Terminal, Search, Copy, Check, ChevronLeft, ChevronRight, FileText, Filter, Shield, AlertTriangle, Users, Share2, Radio, Bug } from 'lucide-react';
 import { db } from '../firebase';
 import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
 import { onAuditLogReceived } from '../socket';
@@ -37,13 +36,13 @@ const dedupeLogs = (list) => {
 };
 
 const CATEGORIES = [
-  { id: 'meaningful', label: 'Admin Activities', icon: FileText },
-  { id: 'INCIDENTS', label: 'Incidents & Dispatches', icon: AlertTriangle },
-  { id: 'CITIZENS', label: 'Citizen Management', icon: Users },
-  { id: 'ADMIN_MANAGEMENT', label: 'Admin Accounts', icon: Shield },
-  { id: 'EXPORTS_AND_SHARING', label: 'Exports & Sharing', icon: Share2 },
-  { id: 'AUTH', label: 'Sign-In & Auth', icon: Shield },
-  { id: 'SYSTEM_ERRORS', label: 'System Errors', icon: Bug },
+  { id: 'meaningful', label: 'Admin Activities' },
+  { id: 'INCIDENTS', label: 'Incidents & Dispatches' },
+  { id: 'CITIZENS', label: 'Citizen Management' },
+  { id: 'ADMIN_MANAGEMENT', label: 'Admin Accounts' },
+  { id: 'EXPORTS_AND_SHARING', label: 'Exports & Sharing' },
+  { id: 'AUTH', label: 'Sign-In & Auth' },
+  { id: 'SYSTEM_ERRORS', label: 'System Errors' },
 ];
 
 export default function AuditLogs({ darkMode }) {
@@ -214,21 +213,17 @@ export default function AuditLogs({ darkMode }) {
   const textSubtle = darkMode ? "text-slate-400" : "text-slate-500";
 
   return (
-    <div className={`w-full font-sans transition-colors duration-200 ${darkMode ? 'text-slate-100' : 'text-slate-800'}`} style={{ fontFamily: 'Roboto, sans-serif' }}>
+    <div className={`w-full font-sans transition-colors duration-200 ${darkMode ? 'text-slate-100' : 'text-slate-800'}`}>
       
       {/* 🔹 Header Section */}
       <div className={`border rounded-2xl p-6 mb-6 shadow-xs ${cardBg}`}>
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div className="space-y-1">
             <div className="flex items-center gap-3 flex-wrap">
-              <h1 className={`text-xl font-bold flex items-center gap-2.5 ${darkMode ? 'text-white' : 'text-slate-900'}`}>
-                <div className={`p-2 rounded-xl border ${darkMode ? 'bg-blue-950/60 text-blue-400 border-blue-800/50' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>
-                  <FileText className="w-5 h-5" />
-                </div>
+              <h1 className={`text-2xl font-bold tracking-tight ${darkMode ? 'text-white' : 'text-slate-900'}`}>
                 Administrator Activity & Audit Logs
               </h1>
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                <Radio className="w-3.5 h-3.5 text-emerald-500 animate-pulse" />
                 Live Stream
               </span>
             </div>
@@ -239,13 +234,12 @@ export default function AuditLogs({ darkMode }) {
 
           {/* Search Field */}
           <div className="relative min-w-[280px] lg:min-w-[340px]">
-            <Search className={`absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 ${darkMode ? 'text-slate-500' : 'text-slate-400'}`} />
             <input
               type="text"
               placeholder="Search by action, admin name, or ID..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className={`w-full pl-10 pr-4 py-2.5 text-sm rounded-xl border focus:ring-3 focus:ring-blue-500/10 focus:outline-none transition-all ${inputBg}`}
+              className={`w-full px-4 py-2.5 text-sm rounded-xl border focus:ring-3 focus:ring-blue-500/10 focus:outline-none transition-all ${inputBg}`}
             />
           </div>
         </div>
@@ -258,11 +252,10 @@ export default function AuditLogs({ darkMode }) {
             scrollbarColor: darkMode ? '#475569 #0f172a' : '#cbd5e1 #f8fafc',
           }}
         >
-          <span className={`text-xs font-semibold shrink-0 mr-1 flex items-center gap-1 ${textSubtle}`}>
-            <Filter className="w-3.5 h-3.5" /> Filter:
+          <span className={`text-xs font-semibold shrink-0 mr-1 ${textSubtle}`}>
+            Filter:
           </span>
           {CATEGORIES.map((cat) => {
-            const Icon = cat.icon;
             const isSelected = selectedCategory === cat.id;
             return (
               <button
@@ -276,7 +269,6 @@ export default function AuditLogs({ darkMode }) {
                     : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
                 }`}
               >
-                <Icon className="w-3.5 h-3.5" />
                 <span>{cat.label}</span>
               </button>
             );
@@ -292,7 +284,6 @@ export default function AuditLogs({ darkMode }) {
           </div>
         ) : filteredLogs.length === 0 ? (
           <div className="text-center py-20 px-4">
-            <Terminal className={`w-8 h-8 mx-auto mb-3 ${darkMode ? 'text-slate-600' : 'text-slate-300'}`} />
             <p className={`text-sm font-semibold ${darkMode ? 'text-slate-200' : 'text-slate-700'}`}>No matching activity logs found</p>
             <p className={`text-xs mt-1 ${darkMode ? 'text-slate-500' : 'text-slate-400'}`}>Try selecting another category or clearing your search query.</p>
           </div>
@@ -328,7 +319,7 @@ export default function AuditLogs({ darkMode }) {
                           <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
                         </span>
                       )}
-                      <span className={`text-[11px] font-mono font-semibold tracking-wide px-2.5 py-1 rounded-lg border select-none ${
+                      <span className={`text-xs font-mono font-semibold tracking-wide px-2.5 py-1 rounded-lg border select-none ${
                         darkMode ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-slate-100 text-slate-600 border-slate-200/60'
                       }`}>
                         {formatTimestamp(log.createdAt, log.timestamp)}
@@ -341,17 +332,17 @@ export default function AuditLogs({ darkMode }) {
                           {actionTitle}
                         </span>
                         {isRecent && (
-                          <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 uppercase tracking-wider">
+                          <span className="px-1.5 py-0.2 rounded text-xs font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 uppercase tracking-wider">
                             Live
                           </span>
                         )}
                         {String(log.action || '').toUpperCase().startsWith('SYSTEM_ERROR') && (
-                          <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20 uppercase tracking-wider">
+                          <span className="px-1.5 py-0.2 rounded text-xs font-bold bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20 uppercase tracking-wider">
                             Error
                           </span>
                         )}
                         {severity && (
-                          <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${
+                          <span className={`px-1.5 py-0.2 rounded text-xs font-bold ${
                             severity === 'Critical' || severity === 'High'
                               ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20'
                               : severity === 'Moderate' || severity === 'Medium'
@@ -368,12 +359,12 @@ export default function AuditLogs({ darkMode }) {
                           {actorName}
                         </strong>
                         {adminId && (
-                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-200/70 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                          <span className="text-xs px-1.5 py-0.2 rounded bg-slate-200/70 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
                             {adminId}
                           </span>
                         )}
                         {dept && (
-                          <span className="text-[10px] font-semibold px-1.5 py-0.2 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                          <span className="text-xs font-semibold px-1.5 py-0.2 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400">
                             {dept}
                           </span>
                         )}
@@ -390,9 +381,9 @@ export default function AuditLogs({ darkMode }) {
 
                       {agencies.length > 0 && (
                         <div className="flex items-center gap-1.5 pt-0.5 flex-wrap">
-                          <span className="text-[10px] text-slate-400 font-sans">Agencies:</span>
+                          <span className="text-xs text-slate-400 font-sans">Agencies:</span>
                           {agencies.map((agency, idx) => (
-                            <span key={idx} className="px-1.5 py-0.2 rounded text-[9px] font-semibold bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-sans">
+                            <span key={idx} className="px-1.5 py-0.2 rounded text-xs font-semibold bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-sans">
                               {agency}
                             </span>
                           ))}
@@ -413,15 +404,9 @@ export default function AuditLogs({ darkMode }) {
                       }`}
                     >
                       {isCopied ? (
-                        <>
-                          <Check className="w-3.5 h-3.5 text-emerald-500" />
-                          <span className="text-emerald-500 font-semibold">Copied</span>
-                        </>
+                        <span className="text-emerald-500 font-semibold">Copied</span>
                       ) : (
-                        <>
-                          <Copy className="w-3.5 h-3.5" />
-                          <span>Copy</span>
-                        </>
+                        <span>Copy</span>
                       )}
                     </button>
                   </div>
@@ -454,7 +439,6 @@ export default function AuditLogs({ darkMode }) {
                     : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:border-slate-300'
                 }`}
               >
-                <ChevronLeft className="w-4 h-4" />
                 Previous
               </button>
 
@@ -472,7 +456,6 @@ export default function AuditLogs({ darkMode }) {
                 }`}
               >
                 Next
-                <ChevronRight className="w-4 h-4" />
               </button>
             </div>
           </div>

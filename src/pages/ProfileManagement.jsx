@@ -407,7 +407,7 @@ export default function ProfileManagement({ darkMode }) {
       />
 
       <div>
-        <h1 className="text-2xl font-black tracking-tight">Edit Profile</h1>
+        <h1 className="text-2xl font-bold tracking-tight">Edit Profile</h1>
       </div>
 
       {/* Personal Information Form */}

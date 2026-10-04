@@ -265,7 +265,7 @@ export default function Dashboard({ darkMode, setActivePage }) {
             <div key={idx} className={`p-5 rounded-xl border-l-4 shadow-xs flex items-center justify-between ${cardBg} ${stat.color}`}>
               <div className="space-y-1">
                 <span className={`text-xs font-semibold uppercase tracking-wider ${darkMode ? 'text-slate-500' : 'text-slate-400'}`}>{stat.label}</span>
-                <h3 className="text-xl sm:text-2xl font-black tracking-tight">{stat.value}</h3>
+                <h3 className="text-xl sm:text-2xl font-bold tracking-tight">{stat.value}</h3>
                 <span className={`text-xs font-medium block ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>{stat.change}</span>
               </div>
               <div className={`p-3 rounded-lg shadow-xs shrink-0 ${innerIconBg}`}>
@@ -291,7 +291,7 @@ export default function Dashboard({ darkMode, setActivePage }) {
               </p>
             </div>
             <div className="flex items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold tracking-wide bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold tracking-wide bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
                 <Radio className="w-3 h-3 text-emerald-500 animate-pulse" />
                 LIVE STREAM
               </span>
@@ -338,12 +338,12 @@ export default function Dashboard({ darkMode, setActivePage }) {
                             {actionTitle}
                           </span>
                           {isRecent && (
-                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 uppercase tracking-wider">
+                            <span className="px-1.5 py-0.5 rounded text-xs font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 uppercase tracking-wider">
                               Live
                             </span>
                           )}
                           {severity && (
-                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                            <span className={`px-1.5 py-0.5 rounded text-xs font-bold ${
                               severity === 'Critical' || severity === 'High'
                                 ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20'
                                 : severity === 'Moderate' || severity === 'Medium'
@@ -355,17 +355,17 @@ export default function Dashboard({ darkMode, setActivePage }) {
                           )}
                         </div>
 
-                        <div className="flex items-center gap-2 flex-wrap text-[11px] text-slate-500 dark:text-slate-400">
+                        <div className="flex items-center gap-2 flex-wrap text-xs text-slate-500 dark:text-slate-400">
                           <strong className="font-semibold text-slate-700 dark:text-slate-300">
                             {actorName}
                           </strong>
                           {adminId && (
-                            <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-slate-200/70 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                            <span className="font-mono text-xs px-1.5 py-0.5 rounded bg-slate-200/70 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
                               {adminId}
                             </span>
                           )}
                           {dept && (
-                            <span className="px-1.5 py-0.5 rounded font-semibold text-[10px] bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                            <span className="px-1.5 py-0.5 rounded font-semibold text-xs bg-blue-500/10 text-blue-600 dark:text-blue-400">
                               {dept}
                             </span>
                           )}
@@ -379,9 +379,9 @@ export default function Dashboard({ darkMode, setActivePage }) {
 
                         {agencies.length > 0 && (
                           <div className="flex items-center gap-1.5 pt-0.5 flex-wrap">
-                            <span className="text-[10px] text-slate-400">Agencies:</span>
+                            <span className="text-xs text-slate-400">Agencies:</span>
                             {agencies.map((agency, idx) => (
-                              <span key={idx} className="px-1.5 py-0.2 rounded text-[9px] font-semibold bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                              <span key={idx} className="px-1.5 py-0.2 rounded text-xs font-semibold bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
                                 {agency}
                               </span>
                             ))}
@@ -395,7 +395,7 @@ export default function Dashboard({ darkMode, setActivePage }) {
                         {formatTimestamp(log.createdAt, log.timestamp)}
                       </span>
                       {logDate && (
-                        <span className="text-[10px] text-slate-400 block mt-0.5">
+                        <span className="text-xs text-slate-400 block mt-0.5">
                           {timeAgo(logDate)}
                         </span>
                       )}

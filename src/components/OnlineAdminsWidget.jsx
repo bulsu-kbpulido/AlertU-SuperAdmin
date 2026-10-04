@@ -113,7 +113,7 @@ export default function OnlineAdminsWidget({ admins, loading, darkMode }) {
             >
               <div className="relative shrink-0">
                 <div
-                  className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-[11px] font-bold overflow-hidden ${a.avatarBg || 'bg-slate-500'}`}
+                  className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold overflow-hidden ${a.avatarBg || 'bg-slate-500'}`}
                 >
                   {a.avatar ? (
                     <img src={a.avatar} alt="" className="w-full h-full object-cover" />
@@ -129,7 +129,7 @@ export default function OnlineAdminsWidget({ admins, loading, darkMode }) {
               </div>
               <span className="text-sm font-semibold truncate flex-1">{a.name || a.email || 'Admin'}</span>
               {a.adminId && (
-                <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-slate-200/70 dark:bg-slate-800 text-slate-600 dark:text-slate-400 shrink-0">
+                <span className="font-mono text-xs px-1.5 py-0.5 rounded bg-slate-200/70 dark:bg-slate-800 text-slate-600 dark:text-slate-400 shrink-0">
                   {a.adminId}
                 </span>
               )}
