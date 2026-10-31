@@ -1,35 +1,18 @@
 import useNewRows from '../hooks/useNewRows';
 import NewBadge from '../components/NewBadge';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
 import { fetchFromBackend } from '../api';
 import { 
-  RotateCcw, 
-  Trash2, 
   ChevronLeft, 
   ChevronRight, 
   ShieldAlert, 
   Archive,
   Loader2,
-  CheckSquare,
-  Square,
-  Check,
-  RefreshCw
+  RefreshCw,
+  Eye
 } from 'lucide-react';
 
-// Import shadcn/ui AlertDialog components
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import toast from 'react-hot-toast';
 
 // Cache Configuration matching CitizenManagement pattern
 const CACHE_KEY = 'ALERTU_ARCHIVED_CITIZENS_CACHE';
@@ -43,7 +26,8 @@ const ArchivedCitizensTable = ({
   searchTerm, 
   onRefresh,
   onCountChange,
-  refreshSignal = 0
+  refreshSignal = 0,
+  onViewCitizen
 }) => {
   const [archivedCitizens, setArchivedCitizens] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -51,15 +35,6 @@ const ArchivedCitizensTable = ({
   const [retrying, setRetrying] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
-
-  // Selected row IDs state tracking
-  const [selectedIds, setSelectedIds] = useState(new Set());
-
-  // Dialog state tracking
-  const [selectedCitizen, setSelectedCitizen] = useState(null);
-  const [isRestoreOpen, setIsRestoreOpen] = useState(false);
-  const [isBatchRestoreOpen, setIsBatchRestoreOpen] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const mountRef = useRef(true);
 
@@ -144,7 +119,6 @@ const ArchivedCitizensTable = ({
 
       if (mountRef.current) {
         setArchivedCitizens(cleanData);
-        setSelectedIds(new Set()); // Reset selections on fresh fetch
       }
     } catch (err) {
       console.error('Failed to fetch archived citizens:', err);
@@ -193,7 +167,6 @@ const ArchivedCitizensTable = ({
   // Reset page when search term changes
   useEffect(() => {
     setCurrentPage(1);
-    setSelectedIds(new Set());
   }, [searchTerm]);
 
   const totalPages = Math.ceil(filteredCitizens.length / itemsPerPage) || 1;
@@ -213,110 +186,6 @@ const ArchivedCitizensTable = ({
     return filteredCitizens.slice(start, start + itemsPerPage);
   }, [filteredCitizens, currentPage, itemsPerPage]);
 
-  // --- Row Selection Handlers ---
-  const toggleSelectRow = useCallback((citizenId) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(citizenId)) {
-        next.delete(citizenId);
-      } else {
-        next.add(citizenId);
-      }
-      return next;
-    });
-  }, []);
-
-  const handleSelectAll = useCallback(() => {
-    const currentPageIds = paginatedCitizens.map(getCitizenId).filter(Boolean);
-    const allSelectedOnPage = currentPageIds.every((id) => selectedIds.has(id));
-
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (allSelectedOnPage) {
-        currentPageIds.forEach((id) => next.delete(id));
-      } else {
-        currentPageIds.forEach((id) => next.add(id));
-      }
-      return next;
-    });
-  }, [paginatedCitizens, selectedIds]);
-
-  // Double click row toggle
-  const handleRowDoubleClick = (citizen) => {
-    const id = getCitizenId(citizen);
-    if (id) toggleSelectRow(id);
-  };
-
-  // Dialog Openers
-  const openRestoreDialog = (citizen) => {
-    setSelectedCitizen(citizen);
-    setIsRestoreOpen(true);
-  };
-
-  // Perform Single Restore Request
-  const handleConfirmRestore = async () => {
-    if (!selectedCitizen) return;
-    const citizenId = getCitizenId(selectedCitizen);
-
-    try {
-      setIsSubmitting(true);
-      await fetchWithRetry(`/citizens/${citizenId}/restore`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ actionTag: `RESTORE_CITIZEN_${citizenId}` })
-      });
-
-      setIsRestoreOpen(false);
-      toast.success(
-        `${selectedCitizen.fullName || 'Citizen'} restored successfully.`,
-        { duration: 10000 }
-      );
-      setSelectedCitizen(null);
-      await loadArchivedCitizens(true);
-      if (onRefresh) onRefresh();
-    } catch (err) {
-      console.error('Error restoring citizen:', err);
-      toast.error('Failed to restore citizen. Please try again.', { duration: 10000 });
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  // Perform Batch Restore Request
-  const handleConfirmBatchRestore = async () => {
-    if (selectedIds.size === 0) return;
-    const restoredCount = selectedIds.size;
-
-    try {
-      setIsSubmitting(true);
-      const restorePromises = Array.from(selectedIds).map((id) =>
-        fetchWithRetry(`/citizens/${id}/restore`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ actionTag: `BATCH_RESTORE_${id}` })
-        })
-      );
-
-      await Promise.all(restorePromises);
-
-      setIsBatchRestoreOpen(false);
-      toast.success(`${restoredCount} citizen record(s) restored successfully.`, { duration: 10000 });
-      setSelectedIds(new Set());
-      await loadArchivedCitizens(true);
-      if (onRefresh) onRefresh();
-    } catch (err) {
-      console.error('Error restoring selected citizens:', err);
-      toast.error('Failed to restore some selected records. Please try again.', { duration: 10000 });
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const areAllCurrentPageSelected = useMemo(() => {
-    if (paginatedCitizens.length === 0) return false;
-    return paginatedCitizens.every((c) => selectedIds.has(getCitizenId(c)));
-  }, [paginatedCitizens, selectedIds]);
-
   if (loading && !retrying) {
     return (
       <div className="w-full divide-y divide-slate-100 dark:divide-slate-800">
@@ -331,7 +200,6 @@ const ArchivedCitizensTable = ({
             <div className="h-6 bg-slate-200 dark:bg-slate-700 rounded-full w-20" />
             <div className="flex items-center space-x-2">
               <div className="h-8 bg-slate-200 dark:bg-slate-700 rounded-md w-16" />
-              <div className="h-8 bg-slate-200 dark:bg-slate-700 rounded-md w-24" />
             </div>
           </div>
         ))}
@@ -366,65 +234,11 @@ const ArchivedCitizensTable = ({
         </div>
       )}
 
-      {/* 🔹 Control Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-3 border-b border-slate-200 bg-slate-50/70 dark:border-slate-800 dark:bg-slate-900/70 min-h-[52px]">
-        <div className="flex items-center gap-3">
-          {/* Select All Button */}
-          <button
-            type="button"
-            onClick={handleSelectAll}
-            disabled={paginatedCitizens.length === 0}
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md border transition-all ${
-              areAllCurrentPageSelected
-                ? 'bg-blue-50 border-blue-300 text-blue-700 dark:bg-blue-950/50 dark:border-blue-800 dark:text-blue-300'
-                : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-100 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-700'
-            }`}
-          >
-            {areAllCurrentPageSelected ? (
-              <CheckSquare className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-            ) : (
-              <Square className="h-4 w-4 text-slate-400" />
-            )}
-            {areAllCurrentPageSelected ? 'Deselect All' : 'Select All'}
-          </button>
-
-          <span className="hidden sm:inline text-xs text-slate-500 dark:text-slate-400">
-            Tip: Double-click any row to toggle selection
-          </span>
-        </div>
-
-        {/* 🔹 Framer Motion Animated Action Buttons (Restore & Delete) */}
-        <AnimatePresence>
-          {selectedIds.size > 0 && (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9, x: 15 }}
-              animate={{ opacity: 1, scale: 1, x: 0 }}
-              exit={{ opacity: 0, scale: 0.9, x: 15 }}
-              transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-              className="flex items-center gap-2"
-            >
-              {/* 🟩 BATCH RESTORE BUTTON */}
-              <button
-                type="button"
-                onClick={() => setIsBatchRestoreOpen(true)}
-                className="inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-emerald-700 focus:outline-none transition-colors"
-              >
-                <RotateCcw className="h-3.5 w-3.5" />
-                Restore Selected ({selectedIds.size})
-              </button>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-
       {/* Table Data */}
       <div className="w-full overflow-x-auto">
         <table className="w-full text-left border-collapse text-sm">
           <thead>
             <tr className="border-b border-slate-200 bg-slate-50/50 dark:border-slate-800 dark:bg-slate-800/50 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-              <th className="w-12 px-4 py-4 text-center">
-                <span className="sr-only">Select</span>
-              </th>
               <th className="px-6 py-4">Citizen ID</th>
               <th className="px-6 py-4">Full Name</th>
               <th className="px-6 py-4">Location Address</th>
@@ -435,7 +249,7 @@ const ArchivedCitizensTable = ({
           <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
             {paginatedCitizens.length === 0 ? (
               <tr>
-                <td colSpan={6} className="py-12 text-center text-slate-500 dark:text-slate-400">
+                <td colSpan={5} className="py-12 text-center text-slate-500 dark:text-slate-400">
                   <Archive className="mx-auto h-8 w-8 text-slate-400 dark:text-slate-600 mb-2" />
                   No archived citizens found in the Vault.
                 </td>
@@ -443,7 +257,6 @@ const ArchivedCitizensTable = ({
             ) : (
               paginatedCitizens.map((citizen) => {
                 const citizenId = getCitizenId(citizen);
-                const isSelected = selectedIds.has(citizenId);
                 const archivedDate = citizen.archivedAt 
                   ? new Date(citizen.archivedAt).toLocaleDateString(undefined, {
                       year: 'numeric',
@@ -453,32 +266,11 @@ const ArchivedCitizensTable = ({
                   : 'N/A';
 
                 return (
-                  <motion.tr
-                    key={citizenId} onClickCapture={() => markSeen(citizen)}
-                    onDoubleClick={() => handleRowDoubleClick(citizen)}
-                    animate={{
-                      backgroundColor: isSelected ? 'rgba(59, 130, 246, 0.08)' : 'rgba(0,0,0,0)',
-                    }}
-                    transition={{ duration: 0.2 }}
-                    className={`group cursor-pointer transition-colors hover:bg-slate-50/80 dark:hover:bg-slate-800/50 ${
-                      isSelected ? 'border-l-4 border-l-blue-500' : ''
-                    }`}
+                  <tr
+                    key={citizenId} 
+                    onClickCapture={() => markSeen(citizen)}
+                    className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors"
                   >
-                    {/* Checkbox Column */}
-                    <td className="px-4 py-4 text-center" onClick={(e) => e.stopPropagation()}>
-                      <button
-                        type="button"
-                        onClick={() => toggleSelectRow(citizenId)}
-                        className={`inline-flex items-center justify-center h-5 w-5 rounded border transition-all ${
-                          isSelected
-                            ? 'bg-blue-600 border-blue-600 text-white dark:bg-blue-500 dark:border-blue-500'
-                            : 'border-slate-300 bg-white dark:border-slate-700 dark:bg-slate-800 hover:border-slate-400'
-                        }`}
-                      >
-                        {isSelected && <Check className="h-3.5 w-3.5 stroke-[3]" />}
-                      </button>
-                    </td>
-
                     <td className="px-6 py-4 font-medium text-slate-700 dark:text-slate-300">
                       {citizenId || 'N/A'}{isNew(citizen) && <NewBadge className="ml-2" />}
                     </td>
@@ -498,19 +290,20 @@ const ArchivedCitizensTable = ({
                       {archivedDate}
                     </td>
 
-                    <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
+                    <td className="px-6 py-4 text-right">
                       <div className="inline-flex items-center justify-end gap-2">
                         <Button
                           size="sm"
-                          onClick={() => openRestoreDialog(citizen)}
-                          className="bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-medium inline-flex items-center gap-1 shadow-sm"
+                          variant="outline"
+                          onClick={() => onViewCitizen && onViewCitizen(citizen)}
+                          className="text-xs font-medium inline-flex items-center gap-1 shadow-sm"
                         >
-                          <RotateCcw className="h-3 w-3" />
-                          <span>Restore</span>
+                          <Eye className="h-3 w-3" />
+                          <span>View</span>
                         </Button>
                       </div>
                     </td>
-                  </motion.tr>
+                  </tr>
                 );
               })
             )}
@@ -550,66 +343,6 @@ const ArchivedCitizensTable = ({
           </div>
         </div>
       )}
-
-      {/* 🟩 RESTORE ALERT DIALOG */}
-      <AlertDialog open={isRestoreOpen} onOpenChange={setIsRestoreOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400">
-              <RotateCcw className="h-5 w-5" /> Restore Citizen Record
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to restore <strong>{selectedCitizen?.fullName || getCitizenId(selectedCitizen)}</strong> back to active citizen records? This will also reactivate their account access.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={isSubmitting}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleConfirmRestore}
-              disabled={isSubmitting}
-              className="bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-700"
-            >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Restoring...
-                </>
-              ) : (
-                'Confirm Restore'
-              )}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* 🟩 BATCH RESTORE ALERT DIALOG */}
-      <AlertDialog open={isBatchRestoreOpen} onOpenChange={setIsBatchRestoreOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400">
-              <RotateCcw className="h-5 w-5" /> Restore {selectedIds.size} Citizen Records
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to restore <strong>{selectedIds.size} selected citizen records</strong> back to active citizen records? This will reactivate their accounts and move them out of the vault.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={isSubmitting}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleConfirmBatchRestore}
-              disabled={isSubmitting}
-              className="bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-700"
-            >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Restoring Selected...
-                </>
-              ) : (
-                `Confirm Restore (${selectedIds.size})`
-              )}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </>
   );
 };
