@@ -6,13 +6,8 @@ import {
   ChevronLeft, 
   ChevronRight, 
   Archive, 
-  Loader2, 
   Search
 } from 'lucide-react';
-import toast from 'react-hot-toast';
-import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../firebase';
-import { useAuditLog } from '../useAuditLog';
 
 const getInitials = (name) => {
   if (!name) return '?';
@@ -24,18 +19,9 @@ export default function ArchivedAdminsTable({
   loading = false,
   searchTerm = '',
   onViewAdmin,
-  onRefresh,
 }) {
-  const { logRestoreAdmin } = useAuditLog();
-
-  const [selectedIds, setSelectedIds] = useState(new Set());
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
-
-  // Dialog states
-  const [targetAdmin, setTargetAdmin] = useState(null);
-  const [isBatchRestoreModalOpen, setIsBatchRestoreModalOpen] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Filter archived admins
   const filteredAdmins = useMemo(() => {
@@ -63,69 +49,6 @@ export default function ArchivedAdminsTable({
     return filteredAdmins.slice(start, start + itemsPerPage);
   }, [filteredAdmins, currentPage, itemsPerPage]);
 
-  // Checkbox helpers
-  const isAllPageSelected = 
-    paginatedAdmins.length > 0 && 
-    paginatedAdmins.every((a) => selectedIds.has(a.id));
-
-  const handleSelectAll = () => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (isAllPageSelected) {
-        paginatedAdmins.forEach((a) => next.delete(a.id));
-      } else {
-        paginatedAdmins.forEach((a) => next.add(a.id));
-      }
-      return next;
-    });
-  };
-
-  const handleToggleRow = (id) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      return next;
-    });
-  };
-
-  // Batch restore
-  const handleBatchRestore = async () => {
-    setIsSubmitting(true);
-    const count = selectedIds.size;
-
-    try {
-      const selectedAdmins = admins.filter((a) => selectedIds.has(a.id));
-      await Promise.all(
-        selectedAdmins.map((a) =>
-          updateDoc(doc(db, 'admins', a.id), {
-            archived: false,
-            archivedAt: null,
-            archivedBy: null,
-            updatedAt: serverTimestamp(),
-          })
-        )
-      );
-
-      for (const a of selectedAdmins) {
-        await logRestoreAdmin(a);
-      }
-
-      toast.success(`Successfully restored ${count} administrators.`);
-      setSelectedIds(new Set());
-      setIsBatchRestoreModalOpen(false);
-      if (onRefresh) onRefresh();
-    } catch (err) {
-      console.error('Batch restore error:', err);
-      toast.error(err.message || 'Failed to complete batch restore.');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
   const formatDate = (timestamp) => {
     if (!timestamp) return '—';
     let date;
@@ -147,42 +70,11 @@ export default function ArchivedAdminsTable({
 
   return (
     <div className="w-full">
-      {/* Batch Actions Floating Toolbar */}
-      {selectedIds.size > 0 && (
-        <div className="bg-blue-50 dark:bg-blue-950/40 border-b border-blue-200 dark:border-blue-900/60 px-6 py-3 flex items-center justify-between animate-in fade-in duration-150">
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center justify-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-600 text-white">
-              {selectedIds.size}
-            </span>
-            <span className="text-xs font-semibold text-blue-900 dark:text-blue-300">
-              {selectedIds.size === 1 ? 'account selected' : 'accounts selected'}
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setIsBatchRestoreModalOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm transition-colors cursor-pointer"
-            >
-              Batch Restore
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* Table */}
       <div className="w-full overflow-x-auto">
         <table className="w-full text-left border-collapse text-sm">
           <thead>
             <tr className="border-b border-slate-200 bg-slate-50/50 dark:border-slate-800 dark:bg-slate-800/50 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-              <th className="px-6 py-4 w-10">
-                <input
-                  type="checkbox"
-                  checked={isAllPageSelected}
-                  onChange={handleSelectAll}
-                  className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                />
-              </th>
               <th className="px-6 py-4">Admin ID</th>
               <th className="px-6 py-4">Administrator</th>
               <th className="px-6 py-4">Phone</th>
@@ -193,30 +85,19 @@ export default function ArchivedAdminsTable({
           <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
             {paginatedAdmins.length === 0 ? (
               <tr>
-                <td colSpan={6} className="py-12 text-center text-slate-500 dark:text-slate-400">
+                <td colSpan={5} className="py-12 text-center text-slate-500 dark:text-slate-400">
                   <Archive className="mx-auto h-8 w-8 text-slate-400 dark:text-slate-600 mb-2" />
                   No archived administrator records found.
                 </td>
               </tr>
             ) : (
               paginatedAdmins.map((admin) => {
-                const isSelected = selectedIds.has(admin.id);
                 return (
                   <tr
-                    key={admin.id} onClickCapture={() => markSeen(admin)}
-                    className={`hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors ${
-                      isSelected ? 'bg-blue-50/30 dark:bg-blue-950/20' : ''
-                    }`}
+                    key={admin.id} 
+                    onClickCapture={() => markSeen(admin)}
+                    className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors"
                   >
-                    <td className="px-6 py-4">
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        onChange={() => handleToggleRow(admin.id)}
-                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                      />
-                    </td>
-
                     {/* Admin ID */}
                     <td className="px-6 py-4">
                       <span className="inline-block rounded-md bg-slate-100 dark:bg-slate-800 px-2.5 py-1 text-xs font-mono font-bold tracking-wide text-slate-800 dark:text-slate-100 border border-slate-200/80 dark:border-slate-700/80">
@@ -300,43 +181,6 @@ export default function ArchivedAdminsTable({
           </div>
         </div>
       )}
-
-      {/* Batch Restore Dialog */}
-      {isBatchRestoreModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-2xl">
-            <div className="flex items-start gap-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-100 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 shrink-0 border border-emerald-200 dark:border-emerald-900">
-                <Archive className="h-6 w-6" />
-              </div>
-              <div>
-                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Batch Restore Accounts?</h3>
-                <p className="mt-2 text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
-                  Are you sure you want to restore all <strong className="text-slate-900 dark:text-slate-200">{selectedIds.size}</strong> selected administrator accounts?
-                </p>
-              </div>
-            </div>
-            <div className="mt-6 flex items-center justify-end gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
-              <button
-                onClick={() => setIsBatchRestoreModalOpen(false)}
-                disabled={isSubmitting}
-                className="px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleBatchRestore}
-                disabled={isSubmitting}
-                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow disabled:opacity-50 transition-colors cursor-pointer"
-              >
-                {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
-                <span>Restore {selectedIds.size} Accounts</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
     </div>
   );
 }
