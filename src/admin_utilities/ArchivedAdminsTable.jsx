@@ -1,4 +1,6 @@
 import React, { useState, useMemo } from 'react';
+import useNewRows from '../hooks/useNewRows';
+import NewBadge from '../components/NewBadge';
 import { 
   Eye, 
   ChevronLeft, 
