@@ -7,6 +7,7 @@ import {
   orderBy,
   limit,
   onSnapshot,
+  getDocs,
 } from 'firebase/firestore';
 import { onAuditLogReceived } from '../socket';
 import { isMeaningfulAdminActivity, formatActionDisplay, getActionCategory } from '../utils/auditActivity';
@@ -39,8 +40,38 @@ export default function Dashboard({ darkMode, setActivePage }) {
 
   const [admins, setAdmins] = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
+  const [disabledOrArchivedAdminIds, setDisabledOrArchivedAdminIds] = useState(new Set());
   const [loadingAdmins, setLoadingAdmins] = useState(true);
   const [loadingLogs, setLoadingLogs] = useState(true);
+
+  // Fetch admins collection to identify disabled or archived administrators
+  useEffect(() => {
+    const fetchAdminsStatus = async () => {
+      try {
+        const snap = await getDocs(collection(db, 'admins'));
+        const restricted = new Set();
+        snap.docs.forEach((docSnap) => {
+          const data = docSnap.data();
+          const docId = docSnap.id;
+          const adminId = data.adminId;
+          const isArchived = data.archived === true;
+          const isDisabled = data.isDisabled === true || data.status === 'Disabled' || data.status === 'disabled';
+
+          if (isArchived || isDisabled) {
+            if (docId) restricted.add(String(docId));
+            if (adminId) restricted.add(String(adminId));
+            if (data.uid) restricted.add(String(data.uid));
+            if (data.email) restricted.add(String(data.email).toLowerCase());
+          }
+        });
+        setDisabledOrArchivedAdminIds(restricted);
+      } catch (err) {
+        console.error('Error fetching admin status for dashboard filtering:', err);
+      }
+    };
+
+    fetchAdminsStatus();
+  }, []);
 
   // 1. Real-time Firestore sync for Admins
   useEffect(() => {
@@ -65,13 +96,6 @@ export default function Dashboard({ darkMode, setActivePage }) {
   }, []);
 
   // 2. Real-time Firestore sync for Audit Logs
-  // IMPORTANT: orderBy is required before limit() here. Without it, Firestore
-  // has no guaranteed ordering and limit(150) can return an arbitrary subset
-  // of documents — which, once the collection grows past 150 entries, can
-  // easily exclude the newest ones entirely. That's why "Recent Admin
-  // Activity" appeared frozen on old dates (e.g. Sep 10) even after many new
-  // actions were performed and successfully logged to the backend: the new
-  // documents were being written, just never included in the fetched window.
   useEffect(() => {
     const logsQuery = query(
       collection(db, 'audit_logs'),
@@ -113,17 +137,33 @@ export default function Dashboard({ darkMode, setActivePage }) {
     return () => unsubscribeSocket();
   }, []);
 
-  // Filter out noise so SuperAdmin focuses purely on meaningful admin actions
+  // Filter out noise so SuperAdmin focuses purely on meaningful admin actions,
+  // while automatically hiding logs from disabled or archived admins by default (same as AuditLogs view)
   const meaningfulLogs = useMemo(() => {
-    return auditLogs.filter(isMeaningfulAdminActivity);
-  }, [auditLogs]);
+    let result = auditLogs.filter(isMeaningfulAdminActivity);
+
+    if (disabledOrArchivedAdminIds.size > 0) {
+      result = result.filter((log) => {
+        const logAdminId = String(log.adminId || '').trim();
+        const logAdminUid = String(log.adminUid || '').trim();
+        const logAdminEmail = String(log.adminEmail || log.email || '').trim().toLowerCase();
+        const logPerformedBy = String(log.performedBy || '').trim();
+
+        return !(
+          (logAdminId && disabledOrArchivedAdminIds.has(logAdminId)) ||
+          (logAdminUid && disabledOrArchivedAdminIds.has(logAdminUid)) ||
+          (logAdminEmail && disabledOrArchivedAdminIds.has(logAdminEmail)) ||
+          (logPerformedBy && disabledOrArchivedAdminIds.has(logPerformedBy))
+        );
+      });
+    }
+
+    return result;
+  }, [auditLogs, disabledOrArchivedAdminIds]);
 
   // Admin statistics calculations
   const nonArchivedAdmins = admins.filter((a) => !a.archived);
   const totalAdmins = nonArchivedAdmins.length;
-  // Same "enabled" rule AdminManagement uses: isDisabled boolean first, otherwise
-  // status !== 'disabled' (case-insensitive). The old check only matched lowercase
-  // 'active', so accounts saved as 'Active' (or any other status) were not counted.
   const activeAdmins = nonArchivedAdmins.filter((a) =>
     typeof a.isDisabled === 'boolean'
       ? !a.isDisabled
@@ -147,7 +187,6 @@ export default function Dashboard({ darkMode, setActivePage }) {
     // Source 2: Check audit_logs collection for recent login events
     auditLogs.forEach((log) => {
       const act = String(log.action || '').toUpperCase();
-      // Match LOGIN, LOGIN_SUCCESS, SIGN_IN, AUTH_SUCCESS, ADMIN_LOGIN, etc., but exclude failures
       const isLoginSuccess =
         (act.includes('LOGIN') || act.includes('SIGN_IN') || act.includes('AUTH_SUCCESS') || act.includes('AUTHENTICAT')) &&
         !act.includes('FAIL') &&
@@ -189,7 +228,6 @@ export default function Dashboard({ darkMode, setActivePage }) {
       };
     }
 
-    // Format human-friendly time and date as primary metric value
     const dateFormatted = latestDate.toLocaleString('en-US', {
       month: 'short',
       day: 'numeric',
@@ -313,7 +351,6 @@ export default function Dashboard({ darkMode, setActivePage }) {
               const actionTitle = formatActionDisplay(log.action);
               const logDate = parseDate(log.createdAt) || parseDate(log.timestamp);
               const isRecent = logDate && (Date.now() - logDate.getTime() < 5 * 60 * 1000);
-              // Severity only makes sense for incident-related actions (not profile updates, etc.)
               const severity = getActionCategory(log) === 'INCIDENTS' ? log.metadata?.verifiedSeverity : null;
               const reportTitle = log.metadata?.reportTitle;
               const agencies = Array.isArray(log.metadata?.selectedAgencies) ? log.metadata.selectedAgencies : [];
@@ -407,8 +444,7 @@ export default function Dashboard({ darkMode, setActivePage }) {
           </div>
         </div>
 
-        {/* Side column: who is online + accounts that need attention.
-            (Pending Review / Active Incidents live in Incident Overview / Report Statistics) */}
+        {/* Side column */}
         <div className="space-y-6">
           <OnlineAdminsWidget admins={admins} loading={loadingAdmins} darkMode={darkMode} />
           <SecurityFlagsWidget
