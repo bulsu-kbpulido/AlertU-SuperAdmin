@@ -2,7 +2,7 @@ import useNewRows from '../hooks/useNewRows';
 import NewBadge from '../components/NewBadge';
 import { useState, useEffect, useMemo } from 'react';
 import { db } from '../firebase';
-import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
+import { collection, query, orderBy, limit, onSnapshot, getDocs } from 'firebase/firestore';
 import { onAuditLogReceived } from '../socket';
 import { 
   isMeaningfulAdminActivity, 
@@ -10,6 +10,7 @@ import {
   formatActionDisplay 
 } from '../utils/auditActivity';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
+import { Eye, EyeOff } from 'lucide-react';
 
 const parseDate = (val) => {
   if (!val) return null;
@@ -52,6 +53,8 @@ export default function AuditLogs({ darkMode }) {
 
   const [logs, setLogs] = useState([]);
   const [systemErrors, setSystemErrors] = useState([]);
+  const [disabledOrArchivedAdminIds, setDisabledOrArchivedAdminIds] = useState(new Set());
+  const [showRestrictedAdminLogs, setShowRestrictedAdminLogs] = useState(false);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('meaningful');
@@ -59,10 +62,37 @@ export default function AuditLogs({ darkMode }) {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
+  // Fetch admins collection to identify disabled or archived administrators
+  useEffect(() => {
+    const fetchAdminsStatus = async () => {
+      try {
+        const snap = await getDocs(collection(db, 'admins'));
+        const restricted = new Set();
+        snap.docs.forEach((docSnap) => {
+          const data = docSnap.data();
+          const docId = docSnap.id;
+          const adminId = data.adminId;
+          const isArchived = data.archived === true;
+          const isDisabled = data.isDisabled === true || data.status === 'Disabled' || data.status === 'disabled';
+
+          if (isArchived || isDisabled) {
+            if (docId) restricted.add(String(docId));
+            if (adminId) restricted.add(String(adminId));
+            if (data.uid) restricted.add(String(data.uid));
+            if (data.email) restricted.add(String(data.email).toLowerCase());
+          }
+        });
+        setDisabledOrArchivedAdminIds(restricted);
+      } catch (err) {
+        console.error('Error fetching admin status for filtering:', err);
+      }
+    };
+
+    fetchAdminsStatus();
+  }, []);
+
   // 1. Real-time Firestore sync for Audit Logs
   useEffect(() => {
-    // Newest first. Without orderBy, Firestore returns an arbitrary 300 docs (by document ID),
-    // so recent logs went missing after a refresh.
     const logsQuery = query(collection(db, 'audit_logs'), orderBy('createdAt', 'desc'), limit(300));
     const unsubscribe = onSnapshot(
       logsQuery,
@@ -141,9 +171,26 @@ export default function AuditLogs({ darkMode }) {
     getTime: (item) => item.createdAt || item.timestamp,
   });
 
-  // Filter logs based on category and search query
+  // Filter logs based on category, search query, and toggle for disabled/archived admins
   const filteredLogs = useMemo(() => {
     let result = selectedCategory === 'SYSTEM_ERRORS' ? systemErrors : uniqueLogs;
+
+    // Filter out logs from disabled or archived admins UNLESS showRestrictedAdminLogs is true
+    if (!showRestrictedAdminLogs && disabledOrArchivedAdminIds.size > 0 && selectedCategory !== 'SYSTEM_ERRORS') {
+      result = result.filter((log) => {
+        const logAdminId = String(log.adminId || '').trim();
+        const logAdminUid = String(log.adminUid || '').trim();
+        const logAdminEmail = String(log.adminEmail || log.email || '').trim().toLowerCase();
+        const logPerformedBy = String(log.performedBy || '').trim();
+
+        return !(
+          (logAdminId && disabledOrArchivedAdminIds.has(logAdminId)) ||
+          (logAdminUid && disabledOrArchivedAdminIds.has(logAdminUid)) ||
+          (logAdminEmail && disabledOrArchivedAdminIds.has(logAdminEmail)) ||
+          (logPerformedBy && disabledOrArchivedAdminIds.has(logPerformedBy))
+        );
+      });
+    }
 
     // 1. Category Filtering
     if (selectedCategory === 'SYSTEM_ERRORS') {
@@ -179,12 +226,12 @@ export default function AuditLogs({ darkMode }) {
     }
 
     return result;
-  }, [uniqueLogs, systemErrors, selectedCategory, searchTerm]);
+  }, [uniqueLogs, systemErrors, selectedCategory, searchTerm, disabledOrArchivedAdminIds, showRestrictedAdminLogs]);
 
-  // Reset to first page when search query or category changes
+  // Reset to first page when search query, category, or toggle changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, selectedCategory]);
+  }, [searchTerm, selectedCategory, showRestrictedAdminLogs]);
 
   // Pagination calculation
   const totalPages = Math.ceil(filteredLogs.length / itemsPerPage) || 1;
@@ -238,15 +285,41 @@ export default function AuditLogs({ darkMode }) {
             </p>
           </div>
 
-          {/* Search Field */}
-          <div className="relative min-w-[280px] lg:min-w-[340px]">
-            <input
-              type="text"
-              placeholder="Search by action, admin name, or ID..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className={`w-full px-4 py-2.5 text-sm rounded-xl border focus:ring-3 focus:ring-blue-500/10 focus:outline-none transition-all ${inputBg}`}
-            />
+          {/* Search Field & Toggle Button */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+            <button
+              onClick={() => setShowRestrictedAdminLogs(!showRestrictedAdminLogs)}
+              className={`inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
+                showRestrictedAdminLogs
+                  ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                  : darkMode
+                  ? 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
+                  : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
+              }`}
+              title={showRestrictedAdminLogs ? 'Hide logs from disabled/archived admins' : 'Show logs from disabled/archived admins'}
+            >
+              {showRestrictedAdminLogs ? (
+                <>
+                  <EyeOff className="w-4 h-4" />
+                  <span>Hide Disabled/Archived Logs</span>
+                </>
+              ) : (
+                <>
+                  <Eye className="w-4 h-4" />
+                  <span>Show Disabled/Archived Logs</span>
+                </>
+              )}
+            </button>
+
+            <div className="relative min-w-[280px] lg:min-w-[300px]">
+              <input
+                type="text"
+                placeholder="Search by action, admin name, or ID..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className={`w-full px-4 py-2.5 text-sm rounded-xl border focus:ring-3 focus:ring-blue-500/10 focus:outline-none transition-all ${inputBg}`}
+              />
+            </div>
           </div>
         </div>
 
@@ -306,7 +379,6 @@ export default function AuditLogs({ darkMode }) {
               const isCopied = copiedId === logId;
               const logDate = parseDate(log.createdAt) || parseDate(log.timestamp);
               const isRecent = logDate && (Date.now() - logDate.getTime() < 5 * 60 * 1000);
-              // Severity only makes sense for incident-related actions
               const severity = getActionCategory(log) === 'INCIDENTS' ? log.metadata?.verifiedSeverity : null;
               const reportTitle = log.metadata?.reportTitle;
               const agencies = Array.isArray(log.metadata?.selectedAgencies) ? log.metadata.selectedAgencies : [];
