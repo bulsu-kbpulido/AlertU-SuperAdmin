@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import { getAuth } from 'firebase/auth'; // 👈 Needed to resolve 401 Unauthorized
 import { FcGoogle } from "react-icons/fc";
@@ -103,10 +103,6 @@ export default function ReportedIncidentModal({
   setCustomSecondaryHazard,
   isSensitive,
   setIsSensitive,
-  isPropertyDamage = false,
-  setIsPropertyDamage = () => {},
-  isMedicalAssistance = false,
-  setIsMedicalAssistance = () => {},
 }) {
   const mapRef = useRef(null);
   const mapInstance = useRef(null);
@@ -182,35 +178,19 @@ export default function ReportedIncidentModal({
   useEffect(() => {
     if (isOpen && selectedReport) {
       const initialType = selectedReport?.verifiedIncidentType || selectedReport?.incidentType || selectedReport?.hazard || 'Fire';
-      const typeByLowercase = {
-        fire: 'Fire',
-        flood: 'Flood',
-        accident: 'Accident',
-        earthquake: 'Earthquake',
-      };
-      const canonicalType = typeByLowercase[String(initialType).trim().toLowerCase()];
+      const predefined = ['Fire', 'Flood', 'Accident'];
       
-      if (canonicalType) {
-        // Normalize values such as 'accident' to 'Accident' so the Accident
-        // Details checkboxes are displayed for existing lowercase records.
-        setSelectionMode(canonicalType);
-        setVerifiedIncidentType(canonicalType);
+      if (predefined.includes(initialType)) {
+        setSelectionMode(initialType);
+        setVerifiedIncidentType(initialType);
         setCustomName('');
       } else {
         setSelectionMode('Others');
         setCustomName(initialType);
         setVerifiedIncidentType(initialType);
       }
-
-      // Sync initial accident flags from selectedReport if available
-      if (selectedReport.isPropertyDamage !== undefined || selectedReport.hasPropertyDamage !== undefined) {
-        setIsPropertyDamage(Boolean(selectedReport.isPropertyDamage ?? selectedReport.hasPropertyDamage));
-      }
-      if (selectedReport.isMedicalAssistance !== undefined || selectedReport.needsMedicalAssistance !== undefined) {
-        setIsMedicalAssistance(Boolean(selectedReport.isMedicalAssistance ?? selectedReport.needsMedicalAssistance));
-      }
     }
-  }, [isOpen, selectedReport, setVerifiedIncidentType, setIsPropertyDamage, setIsMedicalAssistance]);
+  }, [isOpen, selectedReport, setVerifiedIncidentType]);
 
   if (!isOpen || !selectedReport) return null;
 
@@ -320,8 +300,6 @@ export default function ReportedIncidentModal({
     setCustomName(val);
     setVerifiedIncidentType(val || 'Others');
   };
-
-  const isAccidentType = selectionMode === 'Accident';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-900/70 backdrop-blur-sm text-slate-800 dark:text-slate-100 font-sans antialiased overflow-y-auto">
@@ -549,67 +527,38 @@ export default function ReportedIncidentModal({
                       <option value="Fire">Fire</option>
                       <option value="Flood">Flood</option>
                       <option value="Accident">Accident</option>
-                      <option value="Earthquake">Earthquake</option>
                       <option value="Others">Others (Custom)</option>
                     </select>
                     <FiChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none w-4 h-4" />
                   </div>
                 </div>
 
-                {/* Conditional Parameter: Severity Level OR Accident Checkboxes */}
-                {!isAccidentType ? (
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider">
-                      Severity Level
-                    </label>
-                    <div className="grid grid-cols-3 gap-1.5">
-                      {['Low', 'Medium', 'High'].map((sev) => (
-                        <button
-                          key={sev}
-                          type="button"
-                          onClick={() => setVerifiedSeverity(sev)}
-                          className={`py-2 rounded-xl text-xs font-bold transition-all border ${
-                            verifiedSeverity === sev 
-                              ? (sev === 'Low'
-                                  ? 'bg-emerald-600 border-emerald-600 text-white shadow-sm'
-                                  : sev === 'Medium'
-                                    ? 'bg-amber-500 border-amber-500 text-white shadow-sm'
-                                    : 'bg-red-600 border-red-600 text-white shadow-sm')
-                              : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700'
-                          }`}
-                        >
-                          {sev}
-                        </button>
-                      ))}
-                    </div>
+                {/* Verified Severity Selector */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider">
+                    Severity Level
+                  </label>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {['Low', 'Medium', 'High'].map((sev) => (
+                      <button
+                        key={sev}
+                        type="button"
+                        onClick={() => setVerifiedSeverity(sev)}
+                        className={`py-2 rounded-xl text-xs font-bold transition-all border ${
+                          verifiedSeverity === sev 
+                            ? (sev === 'Low'
+                                ? 'bg-emerald-600 border-emerald-600 text-white shadow-sm'
+                                : sev === 'Medium'
+                                  ? 'bg-amber-500 border-amber-500 text-white shadow-sm'
+                                  : 'bg-red-600 border-red-600 text-white shadow-sm')
+                            : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700'
+                        }`}
+                      >
+                        {sev}
+                      </button>
+                    ))}
                   </div>
-                ) : (
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider">
-                      Accident Details
-                    </label>
-                    <div className="flex flex-col gap-2 pt-1">
-                      <label className="flex items-center gap-2 cursor-pointer select-none text-xs font-semibold text-slate-700 dark:text-slate-300">
-                        <input
-                          type="checkbox"
-                          checked={isPropertyDamage}
-                          onChange={(e) => setIsPropertyDamage(e.target.checked)}
-                          className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 accent-blue-600 cursor-pointer"
-                        />
-                        <span>Has Property Damage</span>
-                      </label>
-                      <label className="flex items-center gap-2 cursor-pointer select-none text-xs font-semibold text-slate-700 dark:text-slate-300">
-                        <input
-                          type="checkbox"
-                          checked={isMedicalAssistance}
-                          onChange={(e) => setIsMedicalAssistance(e.target.checked)}
-                          className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 accent-blue-600 cursor-pointer"
-                        />
-                        <span>Needs Medical Assistance</span>
-                      </label>
-                    </div>
-                  </div>
-                )}
+                </div>
               </div>
 
               {selectionMode === 'Others' && (
