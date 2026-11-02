@@ -4,10 +4,10 @@ export const useReportStore = create((set) => ({
   // Modal & Step State
   isVerifyModalOpen: false,
   currentStep: 1,
-  
+
   // Active Selected Report
   selectedReport: null,
-  
+
   // Verification Form Fields
   customLocation: { lat: null, lng: null, address: '' },
   verifiedIncidentType: '',
@@ -17,7 +17,7 @@ export const useReportStore = create((set) => ({
   reportTitle: '',
   selectedAgencies: [],
   tempSpatialData: {},
-  
+
   // 🚨 NEW: Accident specific states
   isPropertyDamage: false,
   isMedicalAssistance: false,
