@@ -3,7 +3,7 @@ import NewBadge from '../components/NewBadge';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { io } from 'socket.io-client';
-import { toast } from 'sonner';
+import toast from 'react-hot-toast';
 import { useReportStore } from '../useReportStore'; 
 
 // Firestore & Firebase Auth Imports
@@ -17,7 +17,6 @@ import VerifyIncidentModal from './VerifyIncidentModal';
 import ReportTitle from './ReportTitle'; 
 import Archived_Routes from '@/report_utilities/Archived_Routes';
 import DuplicateReports from '@/report_utilities/Duplicate_Reports';
-import MedAssPropertyDamageWrapper from './MedAssPropertyDamageWrapper';
 
 // Shadcn UI Skeleton & Dialog Components
 import { Skeleton } from "@/components/ui/skeleton";
@@ -73,8 +72,6 @@ const getIncidentBadgeStyle = (incidentType) => {
     return 'bg-blue-600 text-white border-blue-700';
   } else if (normalized.includes('accident')) {
     return 'bg-violet-600 text-white border-violet-700';
-  } else if (normalized.includes('quake') || normalized.includes('earthquake')) {
-    return 'bg-amber-800 text-white border-amber-900';
   }
   return 'bg-orange-600 text-white border-orange-700';
 };
@@ -154,7 +151,7 @@ export default function Report_Management() {
     archived: null,
   });
 
-  // Global State for Verification Workflow (Including Accident Booleans)
+  // Global State for Verification Workflow
   const {
     isVerifyModalOpen,
     currentStep,
@@ -167,8 +164,6 @@ export default function Report_Management() {
     tempSpatialData,
     selectedAgencies,
     isSensitive,
-    isPropertyDamage,
-    isMedicalAssistance,
     setVerifyModalOpen,
     setCurrentStep,
     setSelectedReport,
@@ -180,8 +175,6 @@ export default function Report_Management() {
     setReportTitle,
     setSelectedAgencies,
     setTempSpatialData,
-    setIsPropertyDamage,
-    setIsMedicalAssistance,
     resetModalState,
   } = useReportStore();
 
@@ -205,7 +198,6 @@ export default function Report_Management() {
 
   // Filtering & Pagination
   const [searchQuery, setSearchQuery] = useState('');
-  const [severityFilter, setSeverityFilter] = useState('ALL');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
@@ -350,18 +342,6 @@ export default function Report_Management() {
     setSelectedViewReport(null);
   };
 
-  // Prefill the official title from what the resident wrote when reporting.
-  const getResidentDetailsTitle = (report) => {
-    const raw = [report?.notes, report?.description, report?.incidentDetails, report?.citizenNotes]
-      .find((v) => typeof v === 'string' && v.trim());
-    if (!raw) return '';
-    const firstLine = raw.trim().split(/\r?\n/)[0].trim();
-    const MAX = 100;
-    if (firstLine.length <= MAX) return firstLine;
-    const cut = firstLine.slice(0, MAX);
-    return `${cut.slice(0, Math.max(cut.lastIndexOf(' '), 60)).trim()}…`;
-  };
-
   const openVerifyWorkflow = (report) => {
     if (!report) return;
   
@@ -400,12 +380,9 @@ export default function Report_Management() {
   
     setSelectedReport(normalizedReport);
     setCurrentStep(1);
-    setReportTitle(getResidentDetailsTitle(report));
+    setReportTitle('');
     setSelectedAgencies([]);
     setIsSensitive(report.isSensitive || false);
-    // Sync accident flags into Zustand store state
-    setIsPropertyDamage(report.isPropertyDamage ?? report.hasPropertyDamage ?? false);
-    setIsMedicalAssistance(report.isMedicalAssistance ?? report.needsMedicalAssistance ?? false);
     
     const initialLat = Number(report?.location?.latitude || report?.latitude || 14.75);
     const initialLng = Number(report?.location?.longitude || report?.longitude || 120.95);
@@ -437,6 +414,7 @@ export default function Report_Management() {
     const reportIdentifier = selectedReport?.reportID || selectedReport?.id;
     const abandonedAtStep = currentStep;
 
+    // Preserve the close event and close the modal immediately.
     if (reportIdentifier && socketRef.current) {
       socketRef.current.emit('ADMIN_ACTION_EVENT', {
         action: 'CLOSE_VERIFY_MODAL',
@@ -448,6 +426,7 @@ export default function Report_Management() {
 
     resetModalState();
 
+    // Do not await audit logging; it must not block modal closing.
     if (reportIdentifier) {
       void logAdminAction(
         'CLOSE_VERIFY_MODAL',
@@ -477,16 +456,22 @@ export default function Report_Management() {
       selectedReport?.reportId;
 
     if (!sourceDocumentId || sourceDocumentId === '_') {
-      toast.error('Unable to verify report', {
-        description: 'The report document ID is missing. Please reopen the report and try again.',
-        duration: TOAST_DURATION,
-      });
+      toast.error(
+        <div className="flex flex-col gap-0.5">
+          <span className="font-semibold">Unable to verify report</span>
+          <span className="text-xs opacity-80">{'The report document ID is missing. Please reopen the report and try again.'}</span>
+        </div>,
+        { duration: TOAST_DURATION }
+      );
+      // Throw so the modal knows the save failed and does not dispatch or close
       throw new Error('Missing report document ID');
     }
 
     const reportIdentifier = selectedReport?.reportID || sourceDocumentId;
     const verifiedReportID = generateVerifiedReportID(selectedReport);
 
+    // Resolve the Firebase UID and citizen ID separately. The Flutter
+    // notification socket normally joins the Firebase UID room.
     const targetAuthUid =
       selectedReport?.authUid ||
       selectedReport?.uid ||
@@ -505,22 +490,14 @@ export default function Report_Management() {
     let failureHandled = false;
 
     try {
-      const isAccident = verifiedIncidentType.toLowerCase() === 'accident';
       const payload = {
         status: 'verified',
         verifiedReportID: verifiedReportID,
         incidentType: verifiedIncidentType.toLowerCase(),
-        
-        // 🚨 CRITICAL: Explicitly pass accident boolean checkboxes from Zustand store to Firestore
-        isPropertyDamage: Boolean(isPropertyDamage),
-        isMedicalAssistance: Boolean(isMedicalAssistance),
-        hasPropertyDamage: Boolean(isPropertyDamage),
-        needsMedicalAssistance: Boolean(isMedicalAssistance),
-
-        ...(!isAccident ? { verifiedSeverity } : {}),
+        verifiedSeverity,
         hazard: secondaryHazard === 'Others' ? customSecondaryHazard.trim() : secondaryHazard,
-        adminNotes: (adminNotes || '').trim(),
-        reportTitle: (reportTitle || '').trim(),
+        adminNotes,
+        reportTitle,
         selectedAgencies: selectedAgencies.map(agency => ({ id: agency.id, name: agency.name })), 
         verifiedAt: new Date().toISOString(),
         correctedLatitude: customLocation.lat,
@@ -546,16 +523,17 @@ export default function Report_Management() {
       const result = await response.json();
 
       if (response.ok && result.success) {
+        // ⚡ Prepare complete payload for Flutter client socket listener
         const realtimeSocketPayload = {
-          action: 'REPORT_VERIFIED',
-          status: 'APPROVED',
+          action: 'REPORT_VERIFIED',             // Matches Flutter isApprovedAction
+          status: 'APPROVED',                    // Fallback status match
           reportId: reportIdentifier,
           reportID: reportIdentifier,
           verifiedReportID: verifiedReportID,
-          userId: targetAuthUid,
+          userId: targetAuthUid,                  // Firebase UID room
           authUid: targetAuthUid,
-          citizenID: targetCitizenId,
-          title: reportTitle.trim() || verifiedIncidentType,
+          citizenID: targetCitizenId,              // Legacy citizenID room
+          title: reportTitle,
           severity: verifiedSeverity,
           agencies: selectedAgencies,
           location: customLocation,
@@ -569,6 +547,7 @@ export default function Report_Management() {
           realtimeSocketPayload
         );
 
+        // ⚡ Emit across all real-time channels Flutter listens to
         if (socketRef.current) {
           socketRef.current.emit('ADMIN_ACTION_EVENT', realtimeSocketPayload);
           socketRef.current.emit('DISPATCH_VERIFIED_INCIDENT', realtimeSocketPayload);
@@ -576,27 +555,40 @@ export default function Report_Management() {
         }
 
         reportCacheRef.current[activeTab] = null;
+
+        // 🛑 Unmount/reset modal ONLY AFTER emitting socket events
         resetModalState();
 
-        toast.success('Report verified and dispatched', {
-          description: `#${reportIdentifier} was verified and sent to ${selectedAgencies.length} agenc${selectedAgencies.length === 1 ? 'y' : 'ies'}. You can find it in Send Reports.`,
-          duration: TOAST_DURATION,
-        });
+        toast.success(
+          <div className="flex flex-col gap-0.5">
+            <span className="font-semibold">Report verified and dispatched</span>
+            <span className="text-xs opacity-80">{`#${reportIdentifier} was verified and sent to ${selectedAgencies.length} agenc${selectedAgencies.length === 1 ? 'y' : 'ies'}. You can find it in Send Reports.`}</span>
+          </div>,
+          { duration: TOAST_DURATION }
+        );
       } else {
         failureHandled = true;
-        toast.error('Unable to verify report', {
-          description: result.message || 'The report could not be saved. Please try again.',
-          duration: TOAST_DURATION,
-        });
+        toast.error(
+          <div className="flex flex-col gap-0.5">
+            <span className="font-semibold">Unable to verify report</span>
+            <span className="text-xs opacity-80">{result.message || 'The report could not be saved. Please try again.'}</span>
+          </div>,
+          { duration: TOAST_DURATION }
+        );
+        // Throw so the modal does not dispatch or close when saving failed
         throw new Error(result.message || 'Failed to save report');
       }
     } catch (err) {
       console.error("Final submission error:", err);
+      // Server rejections already showed a toast above; this covers network / unexpected errors
       if (!failureHandled) {
-        toast.error('Unable to verify report', {
-          description: 'An error occurred during submission. Please try again.',
-          duration: TOAST_DURATION,
-        });
+        toast.error(
+          <div className="flex flex-col gap-0.5">
+            <span className="font-semibold">Unable to verify report</span>
+            <span className="text-xs opacity-80">{'An error occurred during submission. Please try again.'}</span>
+          </div>,
+          { duration: TOAST_DURATION }
+        );
       }
       throw err;
     }
@@ -616,10 +608,13 @@ export default function Report_Management() {
       const token = await getAuthToken();
 
       if (!token) {
-        toast.error('Session expired', {
-          description: 'Please log in again to continue.',
-          duration: TOAST_DURATION,
-        });
+        toast.error(
+          <div className="flex flex-col gap-0.5">
+            <span className="font-semibold">Session expired</span>
+            <span className="text-xs opacity-80">{'Please log in again to continue.'}</span>
+          </div>,
+          { duration: TOAST_DURATION }
+        );
         return;
       }
       
@@ -671,6 +666,8 @@ export default function Report_Management() {
           eventId: `rejected_${reportToReject}_${Date.now()}`,
         };
 
+        // Use the authenticated backend relay so the server resolves the citizen
+        // rooms and forwards ADMIN_ACTION_EVENT/CITIZEN_REPORT_UPDATED safely.
         await logAdminAction(
           'REPORT_REJECTED',
           `Report_#${reportToReject}`,
@@ -682,22 +679,31 @@ export default function Report_Management() {
         setReportToReject(null);
 
         const rejectedDisplayId = rejectedReport?.reportID || rejectedReport?.reportId || reportToReject;
-        toast.success('Report rejected', {
-          description: `#${rejectedDisplayId} was rejected and moved to the Rejected Reports tab.`,
-          duration: TOAST_DURATION,
-        });
+        toast.success(
+          <div className="flex flex-col gap-0.5">
+            <span className="font-semibold">Report rejected</span>
+            <span className="text-xs opacity-80">{`#${rejectedDisplayId} was rejected and moved to the Rejected Reports tab.`}</span>
+          </div>,
+          { duration: TOAST_DURATION }
+        );
       } else {
-        toast.error('Unable to reject report', {
-          description: result.message || 'The report could not be rejected. Please try again.',
-          duration: TOAST_DURATION,
-        });
+        toast.error(
+          <div className="flex flex-col gap-0.5">
+            <span className="font-semibold">Unable to reject report</span>
+            <span className="text-xs opacity-80">{result.message || 'The report could not be rejected. Please try again.'}</span>
+          </div>,
+          { duration: TOAST_DURATION }
+        );
       }
     } catch (err) {
       console.error("Reject error:", err);
-      toast.error('Unable to reject report', {
-        description: 'An error occurred while rejecting the report. Please try again.',
-        duration: TOAST_DURATION,
-      });
+      toast.error(
+        <div className="flex flex-col gap-0.5">
+          <span className="font-semibold">Unable to reject report</span>
+          <span className="text-xs opacity-80">{'An error occurred while rejecting the report. Please try again.'}</span>
+        </div>,
+        { duration: TOAST_DURATION }
+      );
     } finally {
       setIsRejecting(false);
     }
@@ -713,9 +719,8 @@ export default function Report_Management() {
       const queryStr = searchQuery.trim().toLowerCase();
 
       const matchesSearch = !queryStr || title.includes(queryStr) || address.includes(queryStr) || id.includes(queryStr) || parentId.includes(queryStr);
-      const matchesSeverity = severityFilter === 'ALL' || (report.severity || '').toUpperCase() === severityFilter.toUpperCase();
 
-      return matchesSearch && matchesSeverity;
+      return matchesSearch;
     });
 
     return result.sort((a, b) => {
@@ -728,7 +733,7 @@ export default function Report_Management() {
 
       return String(b.reportID || b.id).localeCompare(String(a.reportID || a.id), undefined, { numeric: true });
     });
-  }, [reports, searchQuery, severityFilter]);
+  }, [reports, searchQuery]);
 
   const totalPages = Math.ceil(filteredReports.length / itemsPerPage) || 1;
   const { isNew, markSeen } = useNewRows('reports-active', reports, {
@@ -740,33 +745,16 @@ export default function Report_Management() {
     return filteredReports.slice(start, start + itemsPerPage);
   }, [filteredReports, currentPage, itemsPerPage]);
 
-  const severityFilterOptions = [
-    { label: 'All', value: 'ALL' },
-    { label: 'High', value: 'HIGH' },
-    { label: 'Medium', value: 'MEDIUM' },
-    { label: 'Low', value: 'LOW' },
-  ];
-
   return (
     <div className="w-full font-sans text-slate-900 dark:text-slate-100 transition-colors duration-200">
       
       {/* Header */}
       <header className="mb-6 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">Report Management</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">Verify Reports</h1>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            Monitor, verify incoming citizen emergency reports, manage duplicates, dispatch agency responses, and review archives.
+            Verify incoming citizen emergency reports, manage duplicates, dispatch agency responses, and review archives.
           </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <button 
-            onClick={handleManualRefresh} 
-            disabled={isRefreshing || loading}
-            className="inline-flex items-center justify-center gap-2 rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 transition-all disabled:opacity-50"
-          >
-            <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin text-blue-600' : ''}`} />
-            Refresh Data
-          </button>
         </div>
       </header>
 
@@ -784,7 +772,7 @@ export default function Report_Management() {
             }`}
           >
             <FileText className="h-4 w-4" />
-            Active Reports
+            For Verification
             {activeTab === 'active' && (
               <span className="ml-1 rounded-full bg-slate-200/80 dark:bg-slate-800 px-2 py-0.5 text-xs font-semibold text-slate-700 dark:text-slate-300">
                 {reports.length}
@@ -842,32 +830,15 @@ export default function Report_Management() {
               />
             </div>
 
-            <div className="inline-flex items-center p-1 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80">
-              {severityFilterOptions.map((opt) => {
-                const isSelected = severityFilter === opt.value;
-                return (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    onClick={() => { setSeverityFilter(opt.value); setCurrentPage(1); }}
-                    className={`relative px-3 py-1.5 text-xs font-medium rounded-md transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
-                      isSelected
-                        ? 'text-slate-900 dark:text-white font-semibold'
-                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-                    }`}
-                  >
-                    {isSelected && (
-                      <motion.div
-                        layoutId="activeReportFilterPill"
-                        className="absolute inset-0 bg-white dark:bg-slate-900 rounded-md shadow-sm border border-slate-200/60 dark:border-slate-700/60"
-                        transition={{ type: 'spring', stiffness: 500, damping: 35 }}
-                      />
-                    )}
-                    <span className="relative z-10">{opt.label}</span>
-                  </button>
-                );
-              })}
-            </div>
+            <button
+              type="button"
+              onClick={handleManualRefresh}
+              disabled={isRefreshing || loading}
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-md border bg-white border-slate-300 text-slate-700 hover:bg-slate-100 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-700 transition-colors disabled:opacity-50 shrink-0"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+              Refresh
+            </button>
           </div>
         )}
 
@@ -904,7 +875,6 @@ export default function Report_Management() {
                   <tr className="border-b border-slate-200 bg-slate-50/50 dark:border-slate-800 dark:bg-slate-800/50 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                     <th className="px-6 py-4">Report ID</th>
                     <th className="px-6 py-4">Type</th>
-                    <th className="px-6 py-4">Severity / Details</th>
                     <th className="px-6 py-4">Location (Street & Brgy)</th>
                     <th className="px-6 py-4">Date & Time</th>
                     <th className="px-6 py-4 text-right">Actions</th>
@@ -919,9 +889,9 @@ export default function Report_Management() {
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
                       >
-                        <td colSpan={6} className="py-12 text-center text-slate-500 dark:text-slate-400">
+                        <td colSpan={5} className="py-12 text-center text-slate-500 dark:text-slate-400">
                           <AlertTriangle className="mx-auto h-8 w-8 text-slate-400 dark:text-slate-600 mb-2" />
-                          No active reports match your selected criteria.
+                          No reports currently need verification.
                         </td>
                       </motion.tr>
                     ) : (
@@ -930,7 +900,6 @@ export default function Report_Management() {
                           const displayType = report.incidentType || report.hazard || report.reportTitle || 'General';
                           const fullAddress = report.location?.address || report.address || report.correctedAddress;
                           const formattedLocation = formatStreetAndBarangay(fullAddress);
-                          const severity = (report.severity || 'Medium').toLowerCase();
                           const rawTimestamp = report.timestamp || report.createdAt;
                           const { date, time } = formatDateTime(rawTimestamp);
 
@@ -951,20 +920,6 @@ export default function Report_Management() {
                                 <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider border shadow-xs transition-colors ${getIncidentBadgeStyle(displayType)}`}>
                                   <span>{displayType}</span>
                                 </span>
-                              </td>
-
-                              <td className="px-6 py-4">
-                                <MedAssPropertyDamageWrapper report={report}>
-                                  <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-semibold capitalize ${
-                                    severity === 'critical' ? 'border-red-200 bg-red-50 text-red-700 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-400' :
-                                    severity === 'high' ? 'border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-900/50 dark:bg-orange-950/40 dark:text-orange-400' :
-                                    severity === 'medium' ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-400' :
-                                    'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-400'
-                                  }`}>
-                                    <AlertTriangle className="h-3 w-3" />
-                                    {severity}
-                                  </span>
-                                </MedAssPropertyDamageWrapper>
                               </td>
 
                               <td className="px-6 py-4 text-slate-600 dark:text-slate-300 max-w-xs xl:max-w-md truncate">
@@ -1073,10 +1028,6 @@ export default function Report_Management() {
               setCustomSecondaryHazard={setCustomSecondaryHazard}
               isSensitive={isSensitive}
               setIsSensitive={setIsSensitive}
-              isPropertyDamage={isPropertyDamage}
-              setIsPropertyDamage={setIsPropertyDamage}
-              isMedicalAssistance={isMedicalAssistance}
-              setIsMedicalAssistance={setIsMedicalAssistance}
               socketInstance={socketRef.current}
             />
           )}
